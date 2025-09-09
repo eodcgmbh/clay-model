@@ -21,3 +21,6 @@ dependencies:
     - timm
     - vit-pytorch
     - wandb
+    - geoarrow-pyarrow
+    - pystac-client
+    - stacchip

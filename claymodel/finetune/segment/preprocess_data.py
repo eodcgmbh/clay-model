@@ -114,13 +114,17 @@ def main():
 
     train_image_paths = list((data_dir / "train").glob("*_naip-new.tif"))
     val_image_paths = list((data_dir / "val").glob("*_naip-new.tif"))
+    test_image_paths = list((data_dir / "test").glob("*_naip-new.tif"))
     train_label_paths = list((data_dir / "train").glob("*_lc.tif"))
     val_label_paths = list((data_dir / "val").glob("*_lc.tif"))
+    test_label_paths = list((data_dir / "test").glob("*_lc.tif"))
 
     process_files(train_image_paths, output_dir / "train/chips", chip_size)
     process_files(val_image_paths, output_dir / "val/chips", chip_size)
+    process_files(test_image_paths, output_dir / "test/chips", chip_size)
     process_files(train_label_paths, output_dir / "train/labels", chip_size)
     process_files(val_label_paths, output_dir / "val/labels", chip_size)
+    process_files(test_label_paths, output_dir / "test/labels", chip_size)
 
 
 if __name__ == "__main__":

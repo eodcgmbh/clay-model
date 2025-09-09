@@ -36,7 +36,7 @@ class ChesapeakeDataset(Dataset):
         platform (str): Platform identifier used in metadata.
     """
 
-    def __init__(self, chip_dir, label_dir, metadata, platform):
+    def __init__(self, chip_dir, label_dir, metadata, platform, max_samples):
         self.chip_dir = Path(chip_dir)
         self.label_dir = Path(label_dir)
         self.metadata = metadata
@@ -44,11 +44,18 @@ class ChesapeakeDataset(Dataset):
             mean=list(metadata[platform].bands.mean.values()),
             std=list(metadata[platform].bands.std.values()),
         )
+        self.gsd = torch.tensor(metadata[platform].gsd)
+        self.waves = torch.tensor(list(metadata[platform].bands.wavelength.values()))
 
         # Load chip and label file names
-        self.chips = [chip_path.name for chip_path in self.chip_dir.glob("*.npy")][
-            :1000
-        ]
+        self.chips = [chip_path.name for chip_path in self.chip_dir.glob("*.npy")]
+        self.chips.sort()
+
+        if max_samples is not None:
+            rng = np.random.RandomState(42)
+            rng.shuffle(self.chips)
+            self.chips = self.chips[:max_samples]           
+        
         self.labels = [re.sub("_naip-new_", "_lc_", chip) for chip in self.chips]
 
     def create_transforms(self, mean, std):
@@ -88,7 +95,7 @@ class ChesapeakeDataset(Dataset):
         label = np.load(label_name)
 
         # Remap labels to match desired classes
-        label_mapping = {1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 15: 6}
+        label_mapping = {1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 15: -1}
         remapped_label = np.vectorize(label_mapping.get)(label)
 
         sample = {
@@ -96,6 +103,10 @@ class ChesapeakeDataset(Dataset):
             "label": torch.from_numpy(remapped_label[0]),
             "time": torch.zeros(4),  # Placeholder for time information
             "latlon": torch.zeros(4),  # Placeholder for latlon information
+            "waves": self.waves,
+            "gsd" : self.gsd,
+            "chip_name": self.chips[idx],
+            "chip_dir": str(self.chip_dir)
         }
         return sample
 
@@ -117,69 +128,63 @@ class ChesapeakeDataModule(L.LightningDataModule):
 
     def __init__(  # noqa: PLR0913
         self,
-        train_chip_dir,
-        train_label_dir,
-        val_chip_dir,
-        val_label_dir,
+        parent_data_dir,
         metadata_path,
         batch_size,
         num_workers,
         platform,
+        max_samples,
+        predict_ds="train", # "train", "val" or "test"
     ):
         super().__init__()
-        self.train_chip_dir = train_chip_dir
-        self.train_label_dir = train_label_dir
-        self.val_chip_dir = val_chip_dir
-        self.val_label_dir = val_label_dir
+        self.train_chip_dir = Path(parent_data_dir) / "train" / "chips"        
+        self.train_label_dir = Path(parent_data_dir) / "train" / "labels"
+        self.val_chip_dir = Path(parent_data_dir) / "val" / "chips"
+        self.val_label_dir = Path(parent_data_dir) / "val" / "labels"
+        self.test_chip_dir = Path(parent_data_dir) / "test" / "chips"
+        self.test_label_dir = Path(parent_data_dir) / "test" / "labels"
         self.metadata = Box(yaml.safe_load(open(metadata_path)))
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.platform = platform
+        self.max_samples = max_samples
+        self.predict_ds = predict_ds
 
     def setup(self, stage=None):
         """
         Setup datasets for training and validation.
 
         Args:
-            stage (str): Stage identifier ('fit' or 'test').
+            stage (str): Stage identifier ('predict').
         """
-        if stage in {"fit", None}:
-            self.trn_ds = ChesapeakeDataset(
-                self.train_chip_dir,
-                self.train_label_dir,
+        if stage in {"predict", None}:
+            if self.predict_ds=="val":
+                self.predict_chip_dir = self.val_chip_dir
+                self.predict_label_dir = self.val_label_dir
+            elif self.predict_ds=="test":
+                self.predict_chip_dir = self.test_chip_dir
+                self.predict_label_dir = self.test_label_dir
+            else: # if self.predict_ds=="train":
+                self.predict_chip_dir = self.train_chip_dir
+                self.predict_label_dir = self.train_label_dir
+
+            self.prd_ds = ChesapeakeDataset(
+                self.predict_chip_dir,
+                self.predict_label_dir,
                 self.metadata,
                 self.platform,
+                self.max_samples
             )
-            self.val_ds = ChesapeakeDataset(
-                self.val_chip_dir,
-                self.val_label_dir,
-                self.metadata,
-                self.platform,
-            )
-
-    def train_dataloader(self):
+    
+    def predict_dataloader(self):
         """
-        Create DataLoader for training data.
+        Create DataLoader for prediction data. For now it is train eventually should be changed
 
         Returns:
-            DataLoader: DataLoader for training dataset.
+            DataLoader: DataLoader for prediction dataset.
         """
         return DataLoader(
-            self.trn_ds,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-        )
-
-    def val_dataloader(self):
-        """
-        Create DataLoader for validation data.
-
-        Returns:
-            DataLoader: DataLoader for validation dataset.
-        """
-        return DataLoader(
-            self.val_ds,
+            self.prd_ds,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
         )

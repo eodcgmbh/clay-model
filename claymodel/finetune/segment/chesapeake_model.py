@@ -62,9 +62,12 @@ class ChesapeakeSegmentor(L.LightningModule):
 
         Returns:
             torch.Tensor: The segmentation logits.
-        """
-        waves = torch.tensor([0.65, 0.56, 0.48, 0.842])  # NAIP wavelengths
-        gsd = torch.tensor(1.0)  # NAIP GSD
+        """        
+
+        gsd = datacube["gsd"][0]
+        waves = datacube["waves"][0]
+
+        # assert (gsd==datacube["gsd"]).all() and (waves==datacube["waves"]).all() #Check how long this assert would increase running time
 
         # Forward pass through the network
         return self.model(

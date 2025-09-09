@@ -291,7 +291,7 @@ class ClayDataModule(L.LightningDataModule):
         elif stage == "predict":
             self.prd_ds = EODataset(
                 chips_path=chips_path,
-                platform=self.platform,
+                platform=self.platforms,
                 metadata_path=self.metadata_path,
             )
 

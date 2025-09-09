@@ -169,6 +169,9 @@ class Encoder(nn.Module):
 
         B, C, H, W = cube.shape
 
+        waves=waves[0]
+        gsd=gsd[0]
+
         patches, waves_encoded = self.to_patch_embed(
             cube, waves
         )  # [B L D] - patchify & create embeddings per patch

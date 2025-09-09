@@ -1,0 +1,31 @@
+# Model configuration - Clay embedding extractor
+model:
+  ckpt_path: checkpoints/clay-v1.5.ckpt  # Path to Clay model checkpoint
+  freeze_encoder: true  # Freeze for inference
+  cls: false
+
+# Data configuration - same datamodule, optimized for embedding extraction
+data:
+  parent_data_dir: data/cvpr/ny/
+  metadata_path: configs/metadata.yaml
+  batch_size: 32
+  num_workers: 8
+  platform: naip
+  max_samples: 1000
+  predict_ds: train
+
+# Trainer configuration for embedding extraction
+trainer:
+  accelerator: auto  # Use GPU if available
+  devices: auto
+  logger: false  # No logging needed
+  enable_checkpointing: false  # No checkpoints needed
+  enable_progress_bar: true  # Show progress
+
+# Callback for saving embeddings
+trainer:
+  callbacks:
+    - class_path: claymodel.finetune.segment.embedding_callback.EmbeddingSaveCallback
+      init_args:        
+        compression: false  # Use .npz compression to save disk space
+        compressed_quantization: true #save to float16
