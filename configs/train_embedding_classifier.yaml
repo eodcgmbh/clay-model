@@ -51,7 +51,7 @@ trainer:
       init_args:
         dirpath: checkpoints/segment_embeddings
         auto_insert_metric_name: False
-        filename: 'embedding-7class-segment_epoch-{epoch:02d}_val-iou-{val/iou:.4f}'
+        filename: 'embedding-segment_epoch-{epoch:02d}_val-iou-{val/iou:.4f}'
         monitor: val/iou
         mode: max
         save_last: True
