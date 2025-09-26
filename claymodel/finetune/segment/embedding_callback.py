@@ -14,7 +14,8 @@ class EmbeddingSaveCallback(L.Callback):
     def __init__(self, 
                  save_metadata=True,
                  compression=True,
-                 compressed_quantization=True):
+                 compressed_quantization=True,
+                 model_path=""):
         """
         Args:
             output_dir: Directory to save embeddings
@@ -26,6 +27,7 @@ class EmbeddingSaveCallback(L.Callback):
         self.save_metadata = save_metadata
         self.compression = compression
         self.compressed_quantization = compressed_quantization
+        self.model_path = model_path
         self.batch_count = 0
         self.total_samples = 0
         
@@ -57,7 +59,7 @@ class EmbeddingSaveCallback(L.Callback):
         batch_size = embeddings.shape[0]
 
         if self.output_dir is None:
-            self.output_dir = Path(batch["chip_dir"][0]) / "embeddings"
+            self.output_dir = Path(batch["chip_dir"][0]) / Path("embeddings_" + self.model_path)
             self.output_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"💾 Saving embeddings for batch {batch_idx} (shape: {embeddings.shape})")

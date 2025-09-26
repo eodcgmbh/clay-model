@@ -1,6 +1,6 @@
 # Model configuration - Clay embedding extractor
 model:
-  ckpt_path: checkpoints/clay-v1.5.ckpt  # Path to Clay model checkpoint
+  ckpt_path: checkpoints/clay-v1.5.ckpt  # Path to model checkpoint
   freeze_encoder: true  # Freeze for inference
   cls: false
 
@@ -12,7 +12,7 @@ data:
   num_workers: 8
   platform: naip
   max_samples: 1000
-  predict_ds: train
+  predict_ds: train # this will be overwritten in the notebook
 
 # Trainer configuration for embedding extraction
 trainer:
