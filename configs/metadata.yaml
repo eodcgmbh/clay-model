@@ -227,6 +227,21 @@ sentinel-1-rtc:
     wavelength:
       vv: 3.5
       vh: 4.0
+sentinel-1-sigma0:
+  band_order:
+    - vv
+    - vh
+  gsd: 20
+  bands:
+    mean:
+      vv: -12.113
+      vh: -18.673
+    std:
+      vv: 8.314
+      vh: 8.017
+    wavelength:
+      vv: 5.5
+      vh: 5.5
 modis:
   band_order:
     - sur_refl_b01

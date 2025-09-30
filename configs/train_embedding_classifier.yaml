@@ -2,7 +2,6 @@
 # Model configuration - will be auto-filled with embedding dimensions
 model:
   # These could be auto-detected from embeddings:
-  ckpt_path: checkpoints/clay-v1.5.ckpt  # Path to Clay model checkpoint
   embedding_dim: 1024
   patch_size: 8
   num_classes: 6
@@ -14,11 +13,11 @@ model:
   b2: 0.95
 
 data:
-  train_embedd_dir: data/cvpr/ny/train/chips/embeddings/ #these will get updated in the notebooks
+  train_embedd_dir: data/cvpr/ny/train/chips/embeddings_checkpoints_clay-v1/
   train_label_dir: data/cvpr/ny/train/labels/
-  val_embedd_dir: data/cvpr/ny/val/chips/embeddings/ #these will get updated in the notebooks
+  val_embedd_dir: data/cvpr/ny/val/chips/embeddings_checkpoints_clay-v1/
   val_label_dir: data/cvpr/ny/val/labels/
-  test_embedd_dir: data/cvpr/ny/test/chips/embeddings/ #these will get updated in the notebooks
+  test_embedd_dir: data/cvpr/ny/test/chips/embeddings_checkpoints_clay-v1/
   test_label_dir: data/cvpr/ny/test/labels/
   target_size: [224, 224]
   batch_size: 32  

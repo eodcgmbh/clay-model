@@ -75,3 +75,4 @@ datadisk/
 checkpoints/
 *.ckpt
 utils/create_subset_dataset.py
+EmbeddingSegmentationHead.gv.png

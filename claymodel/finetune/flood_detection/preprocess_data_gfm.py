@@ -28,34 +28,52 @@ def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=No
         filter_exclusion_layer (function): Function to filter chips based on exclusion layer.
     """
     os.makedirs(output_dir, exist_ok=True)
+    # os.makedirs(output_dir / "chips", exist_ok=True)
+    os.makedirs(output_dir / "labels", exist_ok=True)
 
     file_paths = list(Path(input_dir).glob("*.tif"))
-    img_paths = [fp for fp in file_paths if "SIG0" in fp.name]    
-    assert len(img_paths) == 2, "There should be exactly two SIG0 images (pre and post flood)"
+    vh_img_paths = list(Path(input_dir).glob("SIG0*VH*.tif"))
+    vv_img_paths = list(Path(input_dir).glob("SIG0*VV*.tif"))
+    assert len(vv_img_paths) == 2, "There should be exactly two SIG0 VV images (pre and post flood)"
+    assert len(vh_img_paths) == 2, "There should be exactly two SIG0 VH images (pre and post flood)"
     exclayer_path = [fp for fp in file_paths if "EXCLAYER" in fp.name][0]
     ref_water_path = [fp for fp in file_paths if "REFERENCE_WATER" in fp.name][0]
     flood_mask_path = [fp for fp in file_paths if "FLOOD" in fp.name][0]
 
-    with rio.open(img_paths[0]) as src, \
-         rio.open(img_paths[1]) as src2, \
+    with rio.open(vh_img_paths[0]) as vh_0_src, \
+         rio.open(vh_img_paths[1]) as vh_1_src, \
+         rio.open(vv_img_paths[0]) as vv_0_src, \
+         rio.open(vv_img_paths[1]) as vv_1_src, \
          rio.open(exclayer_path) as src3, \
          rio.open(ref_water_path) as src4, \
          rio.open(flood_mask_path) as src5:
         
-        img0 = src.read()
-        img1 = src2.read()
-        src_nodata = src.nodatavals
-        src2_nodata = src2.nodatavals
+        vh_0 = vh_0_src.read(1) * vh_0_src.scales[0]
+        vh_1 = vh_1_src.read(1) * vh_1_src.scales[0]
+        vv_0 = vv_0_src.read(1) * vv_0_src.scales[0]
+        vv_1 = vv_1_src.read(1) * vv_1_src.scales[0]
+
+        vv_0_flat = vv_0[vv_0!=vv_0_src.nodatavals[0] * vv_0_src.scales[0]].flatten()
+        vv_1_flat = vv_1[vv_1!=vv_1_src.nodatavals[0] * vv_1_src.scales[0]].flatten()
+        vv_flat = np.concatenate([vv_0_flat, vv_1_flat])
+        vv_mean = np.mean(vv_flat)
+        vv_std = np.std(vv_flat)
+
+        vh_0_flat = vh_0[vh_0!=vh_0_src.nodatavals[0]* vh_0_src.scales[0]].flatten()
+        vh_1_flat = vh_1[vh_1!=vh_1_src.nodatavals[0]* vh_1_src.scales[0]].flatten()
+        vh_flat = np.concatenate([vh_0_flat, vh_1_flat])
+        vh_mean = np.mean(vh_flat)
+        vh_std = np.std(vh_flat)
 
         exclayer_data = src3.read(1)
         ref_water_data = src4.read(1)
         flood_mask = src5.read(1)
 
-        n_chips_x = src.width // chip_size
-        n_chips_y = src.height // chip_size
+        n_chips_x = vh_0_src.width // chip_size
+        n_chips_y = vh_0_src.height // chip_size
 
-        assert n_chips_x == src2.width // chip_size == src3.width // chip_size == src4.width // chip_size, "All images must have the same dimensions"
-        assert n_chips_y == src2.height // chip_size == src3.height // chip_size == src4.height // chip_size, "All images must have the same dimensions"                    
+        assert n_chips_x == vh_1_src.width // chip_size == n_chips_x == src5.width // chip_size == src3.width // chip_size == src4.width // chip_size, "All images must have the same dimensions"
+        assert n_chips_y == vh_1_src.height // chip_size == n_chips_y == src5.height // chip_size == src3.height // chip_size == src4.height // chip_size, "All images must have the same dimensions"                    
 
         plot_number = 0
 
@@ -66,14 +84,25 @@ def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=No
                 x1, y1 = i * chip_size, j * chip_size
                 x2, y2 = x1 + chip_size, y1 + chip_size
 
-                img0_chip = img0[:, y1:y2, x1:x2]
-                img1_chip = img1[:, y1:y2, x1:x2]
+                vv_0_chip = vv_0[y1:y2, x1:x2]
+                vv_1_chip = vv_1[y1:y2, x1:x2]
+                vh_1_chip = vh_1[y1:y2, x1:x2]
+                vh_0_chip = vh_0[y1:y2, x1:x2]
+
+                img0_chip = np.zeros((2, chip_size, chip_size), dtype=vh_0.dtype)
+                img1_chip = np.zeros((2, chip_size, chip_size), dtype=vh_1.dtype)
+                img0_chip[0] = vv_0_chip
+                img0_chip[1] = vh_0_chip
+                img1_chip[0] = vv_1_chip
+                img1_chip[1] = vh_1_chip
+
                 exclayer_chip = exclayer_data[y1:y2, x1:x2]
                 ref_water_chip = ref_water_data[y1:y2, x1:x2]
                 flood_mask_chip = flood_mask[y1:y2, x1:x2]
 
                 if filter_nodata is not None:
-                    if filter_nodata(img0_chip, src_nodata) is np.False_ or filter_nodata(img1_chip, src2_nodata) is np.False_:
+                    if not filter_nodata(vv_0_chip, no_data=vv_0_src.nodatavals) or not filter_nodata(vv_1_chip, no_data=vv_1_src.nodatavals) \
+                        or not filter_nodata(vh_0_chip, no_data=vh_0_src.nodatavals) or not filter_nodata(vh_1_chip, no_data=vh_1_src.nodatavals):
                         continue
                 if filter_exclusion_layer is not None:
                     if filter_exclusion_layer(exclayer_chip) is np.False_:
@@ -82,24 +111,30 @@ def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=No
                     if filter_water(ref_water_chip) is np.False_:
                         continue
 
+                img0_base_name = Path(vv_img_paths[0]).stem.replace("VV", "VV_VH")
+                os.makedirs(output_dir / ("chips_" + img0_base_name.split("VV")[0]), exist_ok=True)
                 img0_chip_path = os.path.join(
-                    output_dir,
-                    f"{Path(img_paths[0]).stem}_chip_{chip_index}.npy",
+                    output_dir / ("chips_" + img0_base_name.split("VV")[0]),
+                    f"{img0_base_name}_chip_{chip_index}.npy",
                 )
+
+                img1_base_name = Path(vv_img_paths[1]).stem.replace("VV", "VV_VH")
+                os.makedirs(output_dir / ("chips_" + img1_base_name.split("VV")[0]), exist_ok=True)
                 img1_chip_path = os.path.join(
-                    output_dir,
-                    f"{Path(img_paths[1]).stem}_chip_{chip_index}.npy",
+                    output_dir / ("chips_" + img1_base_name.split("VV")[0]),
+                    f"{img1_base_name}_chip_{chip_index}.npy",
                 )
+
                 exclayer_chip_path = os.path.join(
-                    output_dir,
+                    output_dir / "labels",
                     f"{Path(exclayer_path).stem}_chip_{chip_index}.npy",
                 )
                 ref_water_chip_path = os.path.join(
-                    output_dir,
+                    output_dir / "labels",
                     f"{Path(ref_water_path).stem}_chip_{chip_index}.npy",
                 )
                 flood_mask_chip_path = os.path.join(
-                    output_dir,
+                    output_dir / "labels",
                     f"{Path(flood_mask_path).stem}_chip_{chip_index}.npy",
                 )
 
@@ -133,6 +168,7 @@ def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=No
                 )
                 plt.savefig(png_chip_path)   # saves to file
                 plt.close()                
+    return {"vv_mean": vv_mean, "vv_std": vv_std, "vh_mean": vh_mean, "vh_std": vh_std}
     
 
 def filter_exclayer(max_exclayer_percent):
@@ -142,7 +178,7 @@ def filter_exclayer(max_exclayer_percent):
         exclayer_pixels = np.sum(exclayer_band > 0)  # Count non-zero pixels
         exclayer_percent = exclayer_pixels / total_pixels
 
-        return exclayer_percent <= max_exclayer_percent
+        return (exclayer_percent <= max_exclayer_percent)==np.True_
     return filter_function
 
 
@@ -153,7 +189,7 @@ def filter_water(max_water_percent):
         water_pixels = np.sum(water_band == 1)  # Count non-zero pixels
         water_percent = water_pixels / total_pixels
 
-        return water_percent <= max_water_percent
+        return (water_percent <= max_water_percent)==np.True_
     return filter_function
 
 
@@ -166,7 +202,7 @@ def filter_nodata(max_nodata_percent):
         nodata_pixels = np.sum(img==no_data)  # Count nodata pixels
         nodata_percent = nodata_pixels / total_pixels
 
-        return nodata_percent <= max_nodata_percent
+        return (nodata_percent <= max_nodata_percent)==np.True_
     return filter_function
 
 
@@ -197,27 +233,27 @@ def main():
 
     train_dir = data_dir / "train"
     train_output_dir = output_dir / "train"
-    read_chip_filter(
+    print(read_chip_filter(
         train_dir,
         train_output_dir,
         chip_size,
         filter_exclusion_layer=filter_exclayer(MAX_EXCLAYER_PERCENT),
         filter_water=filter_water(MAX_WATER_PERCENT),
         filter_nodata=filter_nodata(MAX_NODATA_PERCENT),
-    )
+    ))
 
     test_dir = data_dir / "test"
     test_output_dir = output_dir / "test"
-    read_chip_filter(
+    print(read_chip_filter(
         test_dir,
         test_output_dir,
         chip_size,
         filter_exclusion_layer=filter_exclayer(MAX_EXCLAYER_PERCENT),
         filter_water=filter_water(MAX_WATER_PERCENT),
         filter_nodata=filter_nodata(MAX_NODATA_PERCENT),
-    )
+    ))
 
 
 if __name__ == "__main__":
-    main()
-    # main("data/GFM/files", "data/GFM/ny", 224)
+    print(main())
+    # print(main("data/GFM/files", "data/GFM/ny", 224))
