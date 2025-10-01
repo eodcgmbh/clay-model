@@ -18,21 +18,14 @@ VAL_DIR = OUTPUT_BASE_DIR / ("val_split_balanced_" + str(BALANCE_VAL_SET).lower(
 for split_dir in [TRAIN_DIR, VAL_DIR]:
     split_dir.mkdir(exist_ok=True, parents=True)
     (split_dir / "labels").mkdir(exist_ok=True, parents=True)
+    (split_dir / "chips").mkdir(exist_ok=True, parents=True)
 
 # Set random seed for reproducibility
 np.random.seed(42)
 
 print("Analyzing dataset...")
 
-# Discover chips folders
-chips_folders = list(SOURCE_DIR.glob("*chips_*"))
-assert len(chips_folders) == 2, "Expected exactly two chips folders"
-assert (chips_folders[0]).exists() and (chips_folders[1]).exists(), "Chips folders not found"
-
-# Create chips folders in output directories
-for split_dir in [TRAIN_DIR, VAL_DIR]:
-    (split_dir / chips_folders[0].stem).mkdir(exist_ok=True, parents=True)
-    (split_dir / chips_folders[1].stem).mkdir(exist_ok=True, parents=True)
+chips_dir = SOURCE_DIR / "chips"
 
 labels_dir = SOURCE_DIR / "labels"
 
@@ -52,8 +45,7 @@ for f in tqdm(flooding_files, desc="Processing chips"):
     exclayer_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "ENSEMBLE_EXCLAYER") + ".npy")
     lc_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "REFERENCE_WATER") + ".npy")
 
-    img_0_file = list((SOURCE_DIR / chips_folders[0].stem).glob("*chip_" + str(idx) + "*"))
-    img_1_file = list((SOURCE_DIR / chips_folders[1].stem).glob("*chip_" + str(idx) + "*"))
+    img_files = sorted(list(chips_dir.glob("*chip_" + str(idx) + "*")))
     
     # Check if chip has flooding
     exclayer = np.load(exclayer_file)
@@ -65,7 +57,7 @@ for f in tqdm(flooding_files, desc="Processing chips"):
         'flood_file': f,
         'exclayer_file': exclayer_file,
         'lc_file': lc_file,
-        'imgs_files': [img_0_file[0], img_1_file[0]]
+        'imgs_files': [img_files[0], img_files[1]]
     }
     
     if has_flood:
@@ -143,7 +135,7 @@ def copy_chip_files(chips, destination_dir, desc):
         
         # Copy image files
         for img_file in chip["imgs_files"]:
-            dst_file = destination_dir / img_file.parent.stem / img_file.name
+            dst_file = destination_dir / "chips" / img_file.name
             shutil.copy2(img_file, dst_file)
 
 # Copy files to respective directories

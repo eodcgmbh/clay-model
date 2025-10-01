@@ -24,15 +24,12 @@ class GFMDataset(Dataset):
 
     Args:
         chip_dir (str): Directory containing the image chips.
-        label_dir (str): Directory containing the labels.
         metadata (Box): Metadata for normalization and other dataset-specific details.
         platform (str): Platform identifier used in metadata.
     """
 
-    def __init__(self, pre_event_dir, post_event_dir, label_dir, metadata, platform, max_samples):
-        self.pre_chip_dir = Path(pre_event_dir)
-        self.post_chip_dir = Path(post_event_dir)
-        self.label_dir = Path(label_dir)
+    def __init__(self, chips_dir, metadata, platform):
+        self.chips_dir = Path(chips_dir)
         self.metadata = metadata
         self.transform = self.create_transforms(
             mean=list(metadata[platform].bands.mean.values()),
@@ -41,24 +38,7 @@ class GFMDataset(Dataset):
         self.gsd = torch.tensor(metadata[platform].gsd)
         self.waves = torch.tensor(list(metadata[platform].bands.wavelength.values()))
 
-        # Load chip and label file names
-        self.pre_chips = [chip_path.name for chip_path in self.pre_chip_dir.glob("*.npy")]
-        self.pre_chips.sort()
-        self.post_chips = [chip_path.name for chip_path in self.post_chip_dir.glob("*.npy")]
-        self.post_chips.sort()
-        assert len(self.pre_chips) == len(self.post_chips), "Number of pre-event and post-event chips must be the same"
-
-        if max_samples is not None and max_samples > 0 and max_samples < len(self.pre_chips):
-            rng = np.random.RandomState(42)
-            perm = rng.permutation(len(self.pre_chips))[:max_samples]
-            self.pre_chips = [self.pre_chips[i] for i in perm]
-            self.post_chips = [self.post_chips[i] for i in perm]
-                
-        # all_label_files = [p for p in self.label_dir.glob("*FLOOD*.npy")]
-        # all_mask_files = [p for p in self.label_dir.glob("*EXCLAYER*.npy")]
-        # chip_indeces = [chip.split("chip")[1] for chip in self.pre_chips]
-        # self.labels = [str(list(filter(lambda x: chip_idx in str(x), all_label_files))[0].name) for chip_idx in chip_indeces]
-        # self.masks = [str(list(filter(lambda x: chip_idx in str(x), all_mask_files))[0].name) for chip_idx in chip_indeces]
+        self.chips = [p for p in self.chips_dir.glob("*.npy")]
 
     def create_transforms(self, mean, std):
         """
@@ -78,7 +58,7 @@ class GFMDataset(Dataset):
         )
 
     def __len__(self):
-        return len(self.pre_chips) + len(self.post_chips)
+        return len(self.chips)
 
     def __getitem__(self, idx):
         """
@@ -89,36 +69,17 @@ class GFMDataset(Dataset):
 
         Returns:
             dict: A dictionary containing the image, label, and additional information.
-        """
-        if idx >= len(self.pre_chips):
-            chip_name = self.post_chip_dir / self.post_chips[idx - len(self.pre_chips)]
-        else:
-            chip_name = self.pre_chip_dir  / self.pre_chips[idx]
-        # pre_chip_name = self.pre_chip_dir / self.pre_chips[idx]
-        # post_chip_name = self.post_chip_dir / self.post_chips[idx]
-        # label_name = self.label_dir / self.labels[idx]
-        # mask_name = self.label_dir / self.masks[idx]
+        """       
+        chip = np.load(self.chips[idx]).astype(np.float32)
 
-        # pre_chip = np.load(pre_chip_name).astype(np.float32)
-        # post_chip = np.load(post_chip_name).astype(np.float32)
-        # label = np.load(label_name)
-        # excl_mask = np.load(mask_name)
-        chip = np.load(chip_name).astype(np.float32)
-
-        sample = {
-            # "pre_pixels": self.transform(torch.from_numpy(pre_chip)),
-            # "post_pixels": self.transform(torch.from_numpy(post_chip)),
+        sample = {            
             "pixels": self.transform(torch.from_numpy(chip)),
-            # "label": torch.from_numpy(label),
-            # "ignore_mask": torch.from_numpy(excl_mask),
             "time": torch.zeros(4),  # Placeholder for time information
             "latlon": torch.zeros(4),  # Placeholder for latlon information
             "waves": self.waves,
             "gsd" : self.gsd,
-            # "pre_chip_name": self.pre_chips[idx],
-            # "pre_chip_dir": str(self.pre_chip_dir),
-            "chip_name": chip_name.name,
-            "chip_dir": str(chip_name.parent),
+            "chip_name": str(self.chips[idx].name),
+            "chip_dir": str(self.chips[idx].parent),
         }
         return sample
 
@@ -163,19 +124,11 @@ class GFMDataModule(L.LightningDataModule):
         self.max_samples = max_samples
         self.predict_ds = predict_ds
 
-    def _label_dir(self, split_name: str) -> Path:
-        return self.parent_data_dir / split_name / "labels"
+    # def _label_dir(self, split_name: str) -> Path:
+    #     return self.parent_data_dir / split_name / "labels"
 
-    def _find_pre_post_dirs(self, split_dir: Path):
-        """Discover the two chips_SIG0_* directories and return (pre_dir, post_dir).
-
-        Assumes exactly two subdirectories starting with 'chips_SIG0_'.
-        The order is determined by sorted name (first is pre, second is post).
-        """
-        candidates = [p for p in split_dir.iterdir() if p.is_dir() and p.name.startswith("chips_SIG0_")]
-        assert len(candidates) == 2, f"Expected 2 'chips_SIG0_*' dirs under {split_dir}, found {len(candidates)}"
-        candidates.sort(key=lambda p: p.name)
-        return candidates[0], candidates[1]
+    def _chips_dir(self, split_name: str) -> Path:
+        return self.parent_data_dir / split_name / "chips"
 
     def setup(self, stage=None):
         """
@@ -193,17 +146,12 @@ class GFMDataModule(L.LightningDataModule):
                 split_name = self.train_split_name
 
             split_dir = self.parent_data_dir / split_name
-            predict_label_dir = self._label_dir(split_name)
-
-            pre_dir, post_dir = self._find_pre_post_dirs(split_dir)
+            chips_dir = self._chips_dir(split_name)
 
             self.prd_ds = GFMDataset(
-                pre_dir,
-                post_dir,
-                predict_label_dir,
+                chips_dir,
                 self.metadata,
                 self.platform,
-                self.max_samples
             )
     
     def predict_dataloader(self):

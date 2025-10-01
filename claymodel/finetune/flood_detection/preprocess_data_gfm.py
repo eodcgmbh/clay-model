@@ -28,7 +28,7 @@ def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=No
         filter_exclusion_layer (function): Function to filter chips based on exclusion layer.
     """
     os.makedirs(output_dir, exist_ok=True)
-    # os.makedirs(output_dir / "chips", exist_ok=True)
+    os.makedirs(output_dir / "chips", exist_ok=True)
     os.makedirs(output_dir / "labels", exist_ok=True)
 
     file_paths = list(Path(input_dir).glob("*.tif"))
@@ -112,16 +112,14 @@ def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=No
                         continue
 
                 img0_base_name = Path(vv_img_paths[0]).stem.replace("VV", "VV_VH")
-                os.makedirs(output_dir / ("chips_" + img0_base_name.split("VV")[0]), exist_ok=True)
                 img0_chip_path = os.path.join(
-                    output_dir / ("chips_" + img0_base_name.split("VV")[0]),
+                    output_dir / "chips",
                     f"{img0_base_name}_chip_{chip_index}.npy",
                 )
 
                 img1_base_name = Path(vv_img_paths[1]).stem.replace("VV", "VV_VH")
-                os.makedirs(output_dir / ("chips_" + img1_base_name.split("VV")[0]), exist_ok=True)
                 img1_chip_path = os.path.join(
-                    output_dir / ("chips_" + img1_base_name.split("VV")[0]),
+                    output_dir / "chips",
                     f"{img1_base_name}_chip_{chip_index}.npy",
                 )
 

@@ -9,12 +9,7 @@ OUTPUT_DIR = Path("data/GFM/ny/train_balanced")
 
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 (OUTPUT_DIR / "labels").mkdir(exist_ok=True, parents=True)
-
-chips_folders = list(SOURCE_DIR.glob("*chips_*"))
-assert len(chips_folders) == 2, "Expected exactly two chips folder"
-assert (chips_folders[0]).exists() and (chips_folders[1]).exists(), f"Chips folder not found"
-(OUTPUT_DIR / chips_folders[0].stem).mkdir(exist_ok=True, parents=True)
-(OUTPUT_DIR / chips_folders[1].stem).mkdir(exist_ok=True, parents=True)
+(OUTPUT_DIR / "chips").mkdir(exist_ok=True, parents=True)
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -22,6 +17,7 @@ np.random.seed(42)
 print("Analyzing dataset...")
 
 labels_dir = SOURCE_DIR / "labels"
+chips_dir = SOURCE_DIR / "chips"
 
 # Discover flooding files
 flooding_files = list(labels_dir.glob("*FLOOD*.npy"))
@@ -38,8 +34,8 @@ for f in flooding_files:
     exclayer_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "ENSEMBLE_EXCLAYER") + ".npy")
     lc_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "REFERENCE_WATER") + ".npy")
 
-    img_0_file = list((SOURCE_DIR / chips_folders[0].stem).glob("*chip_" + str(idx) + "*"))
-    img_1_file = list((SOURCE_DIR / chips_folders[1].stem).glob("*chip_" + str(idx) + "*"))
+    img_files = sorted(list(chips_dir.glob("*chip_" + str(idx) + "*")))
+    assert len(img_files) == 2, f"Expected 2 chip files for idx {idx}, found {len(img_files)}"
     
     # Check if chip has flooding
     exclayer = np.load(exclayer_file)
@@ -51,7 +47,7 @@ for f in flooding_files:
         'flood_file': f,
         'exclayer_file': exclayer_file,
         'lc_file': lc_file,
-        'imgs_files': [img_0_file[0], img_1_file[0]]
+        'imgs_files': [img_files[0], img_files[1]]
     }
     
     if has_flood:
@@ -87,7 +83,7 @@ for chip in tqdm(chips_to_copy, desc="Copying chips"):
         dst_file = OUTPUT_DIR / "labels" / src_file.name
         shutil.copy2(src_file, dst_file)
     for img_file in chip["imgs_files"]:
-        dst_file = OUTPUT_DIR / img_file.parent.stem / img_file.name
+        dst_file = OUTPUT_DIR / "chips" / img_file.name
         shutil.copy2(img_file, dst_file)
 
 print(f"\n✓ Balanced dataset created at: {OUTPUT_DIR}")

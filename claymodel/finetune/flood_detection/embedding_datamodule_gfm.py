@@ -7,7 +7,7 @@ from pathlib import Path
 
 from typing import Optional, Tuple
 
-class EmbeddingDataset(Dataset):
+class EmbeddingDatasetGFM(Dataset):
     """
     Dataset that loads pre-computed Clay embeddings and corresponding GFM labels
     and exclusion masks (ignore regions).
@@ -23,53 +23,65 @@ class EmbeddingDataset(Dataset):
         self.label_dir = Path(label_dir)
         self.target_size = target_size
         
-        # Find embedding files
-        self.embedding_files = [embedding_path.name for embedding_path in self.embeddings_dir.glob("*.npy")]
+        # Find and pair pre/post embedding files within a single directory
+        all_embed_files = [p.name for p in self.embeddings_dir.glob("*.npy")]
+        key_to_files = {}
+        for fname in all_embed_files:
+            key = fname.split("chip", 1)[1] if "chip" in fname else Path(fname).stem
+            key_to_files.setdefault(key, []).append(fname)
+        paired_items = [(k, sorted(v)) for k, v in key_to_files.items() if len(v) == 2]
+        paired_items.sort(key=lambda x: x[0])
+        self.pre_embedding_files = [v[0] for _, v in paired_items]
+        self.post_embedding_files = [v[1] for _, v in paired_items]
 
         # Build label and mask file mapping based on shared chip index
         all_label_files = [p for p in self.label_dir.glob("*FLOOD*.npy")]
         all_mask_files = [p for p in self.label_dir.glob("*EXCLAYER*.npy")]
 
+        def key_from_name(src_name: str) -> str:
+            return src_name.split("chip", 1)[1] if "chip" in src_name else Path(src_name).stem
+
         def match_by_index(src_name: str, candidates):
-            if "chip" in src_name:
-                chip_idx = src_name.split("chip", 1)[1]
-            else:
-                chip_idx = Path(src_name).stem
+            chip_idx = key_from_name(src_name)
             matches = [p for p in candidates if chip_idx in p.name]
             if not matches:
-                raise FileNotFoundError(f"No match for {src_name} using key '{chip_idx}' in {[p.name for p in candidates[:3]]}...")
+                raise FileNotFoundError(f"No match for {src_name} using key '{chip_idx}'")
             return str(matches[0].name)
 
-        self.labels = [match_by_index(name, all_label_files) for name in self.embedding_files]
-        self.masks = [match_by_index(name, all_mask_files) for name in self.embedding_files]
+        # Align labels and masks to pre embeddings
+        self.labels = [match_by_index(name, all_label_files) for name in self.pre_embedding_files]
+        self.masks = [match_by_index(name, all_mask_files) for name in self.pre_embedding_files]
 
         # Basic checks
-        assert len(self.embedding_files) > 0, f"No embedding files found in directory {embeddings_dir}"
-        assert len(self.embedding_files) == len(self.labels) == len(self.masks), \
-            "Mismatch between embeddings, labels, and masks counts"
+        assert len(self.pre_embedding_files) > 0, f"No embedding pairs found in directory {embeddings_dir}"
+        assert len(self.pre_embedding_files) == len(self.post_embedding_files) == len(self.labels) == len(self.masks), \
+            "Mismatch between pre embeddings, post embeddings, labels, and masks counts"
     
     def __len__(self):
-        return len(self.embedding_files)
+        return len(self.pre_embedding_files)
     
     def __getitem__(self, idx):
 
-        embedding_name = self.embeddings_dir / self.embedding_files[idx]
+        pre_embedding_name = self.embeddings_dir / self.pre_embedding_files[idx]
+        post_embedding_name = self.embeddings_dir / self.post_embedding_files[idx]
         label_name = self.label_dir / self.labels[idx]
         mask_name = self.label_dir / self.masks[idx]
 
-        embedding = np.load(embedding_name).astype(np.float32)
+        pre_embedding = np.load(pre_embedding_name).astype(np.float32)
+        post_embedding = np.load(post_embedding_name).astype(np.float32)
         label = np.load(label_name)
         excl_mask = np.load(mask_name)
         
         sample = {
-            "embedding": torch.from_numpy(embedding),
+            "pre_embedding": torch.from_numpy(pre_embedding),
+            "post_embedding": torch.from_numpy(post_embedding),
             "label": torch.from_numpy(label),
             "ignore_mask": torch.from_numpy(excl_mask),
-            "embedding_name": self.embedding_files[idx]
+            "pre_embedding_name": self.pre_embedding_files[idx]
         }
         return sample
 
-class EmbeddingDataModule(L.LightningDataModule):
+class EmbeddingDataModuleGFM(L.LightningDataModule):
     """
     Lightning DataModule for pre-computed embeddings
     """
@@ -112,12 +124,12 @@ class EmbeddingDataModule(L.LightningDataModule):
         """Set up datasets"""
         
         if stage in {"fit", None}:
-            self.trn_ds = EmbeddingDataset(
+            self.trn_ds = EmbeddingDatasetGFM(
                 self.train_embedd_dir,
                 self.train_label_dir,
                 self.target_size,
             )
-            self.val_ds = EmbeddingDataset(
+            self.val_ds = EmbeddingDatasetGFM(
                 self.val_embedd_dir,
                 self.val_label_dir,
                 self.target_size,
@@ -125,7 +137,7 @@ class EmbeddingDataModule(L.LightningDataModule):
         elif stage == "test":
             if self.test_embedd_dir is None or self.test_label_dir is None:
                 raise ValueError("Test directories must be provided for test stage")
-            self.test_ds = EmbeddingDataset(
+            self.test_ds = EmbeddingDatasetGFM(
                 self.test_embedd_dir,
                 self.test_label_dir,
                 self.target_size,
