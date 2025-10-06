@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import lightning as L
-from torchmetrics.classification import BinaryF1Score, BinaryJaccardIndex, ConfusionMatrix
+from torchmetrics.classification import BinaryF1Score, BinaryJaccardIndex, ConfusionMatrix, BinaryAccuracy
 import torchview
 import segmentation_models_pytorch as smp
 from einops import rearrange
@@ -112,12 +112,12 @@ class ASPPModule(nn.Module):
         return self.project(res)
 
 
-class RGBAdapter(nn.Module):
+class SARAdapter(nn.Module):
     """
-    Multi-scale RGB feature extractor for auxiliary information.
+    Multi-scale SAR feature extractor for auxiliary information.
     Extracts features at three scales matching decoder stages.
     """
-    def __init__(self, in_channels=3, hidden_dim=512):
+    def __init__(self, in_channels=4, hidden_dim=512):
         super().__init__()
         
         # Scale 1: Match embedding resolution (e.g., 28x28 for 224x224 input with patch_size=8)
@@ -150,26 +150,34 @@ class RGBAdapter(nn.Module):
             nn.BatchNorm2d(hidden_dim // 4),
             nn.ReLU(inplace=True)
         )
+
+        # Full-resolution SAR adapter (scale4) to fuse just before classification
+        self.scale4 = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_dim // 8, kernel_size=3, padding=1),
+            nn.BatchNorm2d(hidden_dim // 8),
+            nn.ReLU(inplace=True),
+        )
     
-    def forward(self, rgb):
+    def forward(self, sar):
         """
         Args:
-            rgb: [B, 3, H, W] - Original RGB images
+            sar: [B, 3, H, W] - Original SAR images
         Returns:
             Dictionary with features at three scales
         """
         return {
-            'scale1': self.scale1(rgb),  # Coarsest - matches embedding resolution
-            'scale2': self.scale2(rgb),  # Medium
-            'scale3': self.scale3(rgb)   # Finest
+            'scale1': self.scale1(sar),  # Coarsest - matches embedding resolution
+            'scale2': self.scale2(sar),  # Medium
+            'scale3': self.scale3(sar),  # Finest
+            'scale4': self.scale4(sar)   # Full resolution
         }
 
 
 class TemporalFusionSegmentationHead(nn.Module):
     """
-    Flexible temporal fusion segmentation head with RGB auxiliary input.
+    Flexible temporal fusion segmentation head with SAR auxiliary input.
     
-    NEW: Accepts RGB images and fuses multi-scale RGB features throughout decoder.
+    NEW: Accepts SAR images and fuses multi-scale SAR features throughout decoder.
     """
     
     def __init__(self, 
@@ -180,9 +188,7 @@ class TemporalFusionSegmentationHead(nn.Module):
                  hidden_dim: int = 512,
                  use_aspp: bool = True,
                  use_residual: bool = True,
-                 use_rgb_fusion: bool = True,  # NEW
-                 rgb_channels: int = 3,  # NEW
-                 rgb_fusion_mode: Literal["concat", "add"] = "concat",  # NEW
+                 sar_channels: int = 2,
                  fusion_strategy: Literal[
                      "early_concat", "early_diff", "early_concat_diff",
                      "late_concat", "late_diff", "late_concat_diff",
@@ -195,12 +201,9 @@ class TemporalFusionSegmentationHead(nn.Module):
         self.num_classes = num_classes
         self.patch_size = patch_size
         self.fusion_strategy = fusion_strategy
-        self.use_rgb_fusion = use_rgb_fusion
-        self.rgb_fusion_mode = rgb_fusion_mode
-        
-        # RGB adapter for multi-scale features
-        if use_rgb_fusion:
-            self.rgb_adapter = RGBAdapter(in_channels=rgb_channels, hidden_dim=hidden_dim)
+
+    
+        self.sar_adapter = SARAdapter(in_channels=sar_channels*2, hidden_dim=hidden_dim)
         
         # Determine if we need siamese/dual processing
         self.is_late_fusion = fusion_strategy.startswith("late_") or fusion_strategy.startswith("siamese_")
@@ -238,24 +241,19 @@ class TemporalFusionSegmentationHead(nn.Module):
             # Early fusion: single encoder path
             self.encoder = self._build_encoder(initial_channels, hidden_dim, use_residual, use_aspp)
         
-        # Adjust decoder input channels if using RGB fusion at scale1
-        decoder_start_channels = hidden_dim
-        if use_rgb_fusion and rgb_fusion_mode == "concat":
-            decoder_start_channels = hidden_dim + hidden_dim  # Embedding + RGB features
+        # Adjust decoder input channels if using SAR fusion at scale1
+        decoder_start_channels = hidden_dim + hidden_dim  # Embedding + SAR features
         
-        # Shared decoder with RGB fusion
+        # Shared decoder with SAR fusion (concat mode)
         self.decoder = self._build_decoder(
             decoder_start_channels, 
             hidden_dim, 
-            use_residual, 
-            use_rgb_fusion,
-            rgb_fusion_mode
+            use_residual
         )
         
         # Final classification
-        final_channels = hidden_dim // 8
-        if use_rgb_fusion and rgb_fusion_mode == "concat":
-            final_channels = hidden_dim // 8 + hidden_dim // 4  # Decoder + RGB scale3
+        # final_channels = hidden_dim // 8 + hidden_dim // 4  # Decoder + SAR scale3
+        final_channels = hidden_dim // 8 * 2 # Decoder + SAR scale4
         
         self.final_conv = nn.Sequential(
             nn.Conv2d(final_channels, hidden_dim // 8, kernel_size=3, padding=1),
@@ -300,56 +298,50 @@ class TemporalFusionSegmentationHead(nn.Module):
             x = encoder['aspp'](x)
         return x
     
-    def _build_decoder(self, in_channels, hidden_dim, use_residual, use_rgb_fusion, rgb_fusion_mode):
-        """Build progressive upsampling decoder with RGB fusion points"""
+    def _build_decoder(self, in_channels, hidden_dim, use_residual):
+        """Build progressive upsampling decoder with SAR fusion points"""
         decoder = nn.ModuleDict()
         
         # Fusion convolutions to handle concatenated features
-        if use_rgb_fusion and rgb_fusion_mode == "concat":
-            # After scale1 RGB fusion
-            decoder['fusion1'] = nn.Sequential(
-                nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
-                nn.BatchNorm2d(hidden_dim),
-                nn.ReLU(inplace=True)
-            )
-            
-            # Up1: hidden_dim -> hidden_dim // 2
-            decoder['up1'] = UpsampleBlock(hidden_dim, hidden_dim // 2, upscale_factor=2, use_residual=use_residual)
-            
-            # After up1, concat with scale2: (hidden_dim // 2 + hidden_dim // 2)
-            decoder['fusion2'] = nn.Sequential(
-                nn.Conv2d(hidden_dim, hidden_dim // 2, kernel_size=1),
-                nn.BatchNorm2d(hidden_dim // 2),
-                nn.ReLU(inplace=True)
-            )
-            
-            # Up2: hidden_dim // 2 -> hidden_dim // 4
-            decoder['up2'] = UpsampleBlock(hidden_dim // 2, hidden_dim // 4, upscale_factor=2, use_residual=use_residual)
-            
-            # After up2, concat with scale3: (hidden_dim // 4 + hidden_dim // 4)
-            decoder['fusion3'] = nn.Sequential(
-                nn.Conv2d(hidden_dim // 2, hidden_dim // 4, kernel_size=1),
-                nn.BatchNorm2d(hidden_dim // 4),
-                nn.ReLU(inplace=True)
-            )
-            
-            # Up3: hidden_dim // 4 -> hidden_dim // 8
-            decoder['up3'] = UpsampleBlock(hidden_dim // 4, hidden_dim // 8, upscale_factor=2, use_residual=use_residual)
-            
-        else:  # No RGB fusion or add mode
-            decoder['up1'] = UpsampleBlock(in_channels, hidden_dim // 2, upscale_factor=2, use_residual=use_residual)
-            decoder['up2'] = UpsampleBlock(hidden_dim // 2, hidden_dim // 4, upscale_factor=2, use_residual=use_residual)
-            decoder['up3'] = UpsampleBlock(hidden_dim // 4, hidden_dim // 8, upscale_factor=2, use_residual=use_residual)
+        # After scale1 SAR fusion
+        decoder['fusion1'] = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
+            nn.BatchNorm2d(hidden_dim),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Up1: hidden_dim -> hidden_dim // 2
+        decoder['up1'] = UpsampleBlock(hidden_dim, hidden_dim // 2, upscale_factor=2, use_residual=use_residual)
+        
+        # After up1, concat with scale2: (hidden_dim // 2 + hidden_dim // 2)
+        decoder['fusion2'] = nn.Sequential(
+            nn.Conv2d(hidden_dim, hidden_dim // 2, kernel_size=1),
+            nn.BatchNorm2d(hidden_dim // 2),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Up2: hidden_dim // 2 -> hidden_dim // 4
+        decoder['up2'] = UpsampleBlock(hidden_dim // 2, hidden_dim // 4, upscale_factor=2, use_residual=use_residual)
+        
+        # After up2, concat with scale3: (hidden_dim // 4 + hidden_dim // 4)
+        decoder['fusion3'] = nn.Sequential(
+            nn.Conv2d(hidden_dim // 2, hidden_dim // 4, kernel_size=1),
+            nn.BatchNorm2d(hidden_dim // 4),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Up3: hidden_dim // 4 -> hidden_dim // 8
+        decoder['up3'] = UpsampleBlock(hidden_dim // 4, hidden_dim // 8, upscale_factor=2, use_residual=use_residual)
         
         return decoder
     
-    def forward(self, emb_t0, emb_t1, rgb_t0=None, rgb_t1=None):
+    def forward(self, emb_t0, emb_t1, sar_t0=None, sar_t1=None):
         """
         Args:
             emb_t0: [B, N, D] - embeddings from time 0
             emb_t1: [B, N, D] - embeddings from time 1
-            rgb_t0: [B, C, H, W] - RGB image at time 0 (optional)
-            rgb_t1: [B, C, H, W] - RGB image at time 1 (optional)
+            sar_t0: [B, C, H, W] - SAR image at time 0 (optional)
+            sar_t1: [B, C, H, W] - SAR image at time 1 (optional)
         Returns:
             logits: [B, num_classes, H, W]
         """
@@ -360,13 +352,10 @@ class TemporalFusionSegmentationHead(nn.Module):
         x0 = rearrange(emb_t0, "B (H W) D -> B D H W", H=H_patches, W=W_patches)
         x1 = rearrange(emb_t1, "B (H W) D -> B D H W", H=H_patches, W=W_patches)
         
-        # Extract multi-scale RGB features if provided
-        rgb_features = None
-        if self.use_rgb_fusion and rgb_t0 is not None and rgb_t1 is not None:
-            # Average or concatenate temporal RGB features
-            rgb_combined = (rgb_t0 + rgb_t1) / 2  # Simple average
-            rgb_features = self.rgb_adapter(rgb_combined)
-        
+        # Concatenate temporal SAR features
+        sar_combined = torch.cat([sar_t0, sar_t1], dim=1)  # [B, 2C, H, W]
+        sar_features = self.sar_adapter(sar_combined)
+    
         # Temporal fusion (same as before)
         if self.is_late_fusion:
             feat_t0 = self._apply_encoder(x0, self.encoder_t0)
@@ -392,40 +381,26 @@ class TemporalFusionSegmentationHead(nn.Module):
                 x = torch.cat([x0, x1, x1 - x0], dim=1)
             
             x = self._apply_encoder(x, self.encoder)
+            
+            # Fuse scale1 SAR features
+        x = torch.cat([x, sar_features['scale1']], dim=1)
+        x = self.decoder['fusion1'](x)
         
-        # Decode with RGB fusion
-        if self.use_rgb_fusion and rgb_features is not None:
-            if self.rgb_fusion_mode == "concat":
-                # Fuse scale1 RGB features
-                x = torch.cat([x, rgb_features['scale1']], dim=1)
-                x = self.decoder['fusion1'](x)
-                
-                # Up1 + fuse scale2
-                x = self.decoder['up1'](x)
-                x = torch.cat([x, rgb_features['scale2']], dim=1)
-                x = self.decoder['fusion2'](x)
-                
-                # Up2 + fuse scale3
-                x = self.decoder['up2'](x)
-                x = torch.cat([x, rgb_features['scale3']], dim=1)
-                x = self.decoder['fusion3'](x)
-                
-                # Up3
-                x = self.decoder['up3'](x)
-                
-            else:  # add mode
-                # Simply add RGB features at each stage
-                x = x + rgb_features['scale1']
-                x = self.decoder['up1'](x)
-                x = x + rgb_features['scale2']
-                x = self.decoder['up2'](x)
-                x = x + rgb_features['scale3']
-                x = self.decoder['up3'](x)
-        else:
-            # No RGB fusion - standard decoding
-            x = self.decoder['up1'](x)
-            x = self.decoder['up2'](x)
-            x = self.decoder['up3'](x)
+        # Up1 + fuse scale2
+        x = self.decoder['up1'](x)
+        x = torch.cat([x, sar_features['scale2']], dim=1)
+        x = self.decoder['fusion2'](x)
+        
+        # Up2 + fuse scale3
+        x = self.decoder['up2'](x)
+        x = torch.cat([x, sar_features['scale3']], dim=1)
+        x = self.decoder['fusion3'](x)
+        
+        # Up3
+        x = self.decoder['up3'](x)        
+
+        # Full-resolution SAR fusion (scale4) before classification
+        x = torch.cat([x, sar_features['scale4']], dim=1)
         
         # Final classification
         x = self.final_conv(x)
@@ -435,7 +410,7 @@ class TemporalFusionSegmentationHead(nn.Module):
 
 class EmbeddingClassifierGFM(L.LightningModule):
     """
-    Lightning module for binary flood segmentation with RGB auxiliary input
+    Lightning module for binary flood segmentation with SAR auxiliary input
     """
     
     def __init__(self,
@@ -449,9 +424,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
                  b2: float = 0.95,
                  use_aspp: bool = True,
                  use_residual: bool = True,
-                 use_rgb_fusion: bool = True,  # NEW
-                 rgb_channels: int = 3,  # NEW
-                 rgb_fusion_mode: Literal["concat", "add"] = "concat",  # NEW
+                 sar_channels: int = 2,
                  fusion_strategy: Literal[
                      "early_concat", "early_diff", "early_concat_diff",
                      "late_concat", "late_diff", "late_concat_diff",
@@ -468,9 +441,9 @@ class EmbeddingClassifierGFM(L.LightningModule):
             b1, b2: Adam betas
             use_aspp: Whether to use ASPP module
             use_residual: Whether to use residual connections
-            use_rgb_fusion: Whether to use RGB auxiliary input (NEW)
-            rgb_channels: Number of RGB channels (NEW)
-            rgb_fusion_mode: How to fuse RGB features - 'concat' or 'add' (NEW)
+            use_sar_fusion: Whether to use SAR auxiliary input (NEW)
+            sar_channels: Number of SAR channels (NEW)
+            sar_fusion_mode: How to fuse SAR features - 'concat' or 'add' (NEW)
             fusion_strategy: How to fuse temporal embeddings
         """
         super().__init__()
@@ -483,7 +456,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
         self.lr = lr
         self.wd = wd
         self.fusion_strategy = fusion_strategy
-        self.use_rgb_fusion = use_rgb_fusion
+        self.sar_channels = sar_channels
         
         # Create segmentation head
         self.model = TemporalFusionSegmentationHead(
@@ -494,13 +467,12 @@ class EmbeddingClassifierGFM(L.LightningModule):
             hidden_dim=hidden_dim,
             use_aspp=use_aspp,
             use_residual=use_residual,
-            use_rgb_fusion=use_rgb_fusion,
-            rgb_channels=rgb_channels,
-            rgb_fusion_mode=rgb_fusion_mode,
+            sar_channels=sar_channels,
             fusion_strategy=fusion_strategy
         )
         
-        # Loss and metrics
+        # Loss and metrics (aligned with v2)
+        self.OA = BinaryAccuracy(threshold=0.5, ignore_index=-1)
         self.loss_fn = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
         self.iou = BinaryJaccardIndex(threshold=0.5, ignore_index=-1)
         self.f1 = BinaryF1Score(threshold=0.5, ignore_index=-1)
@@ -509,25 +481,23 @@ class EmbeddingClassifierGFM(L.LightningModule):
             threshold=0.5,
             ignore_index=-1,
         )
+        self.confusion_matrix = {}
         
         print(f"🏗️  EmbeddingClassifierGFM initialized:")
         print(f"   Input: {embedding_dim}D embeddings, {patch_size}x{patch_size} patches")
         print(f"   Output: Binary segmentation, {target_size} spatial")
         print(f"   Fusion: {fusion_strategy}")
-        print(f"   RGB Fusion: {use_rgb_fusion} (mode: {rgb_fusion_mode if use_rgb_fusion else 'N/A'})")
+        print(f"   SAR Fusion: True (mode: concat)")
         print(f"   ASPP: {use_aspp}, Residual: {use_residual}")
     
     def forward(self, batch):
         """Forward pass"""
-        # Check if RGB images are available in batch
-        rgb_t0 = batch.get("pre_image", None)
-        rgb_t1 = batch.get("post_image", None)
         
         return self.model(
             batch["pre_embedding"], 
             batch["post_embedding"],
-            rgb_t0=rgb_t0,
-            rgb_t1=rgb_t1
+            batch["pre_image"],
+            batch["post_image"]
         )
     
     def shared_step(self, batch, batch_idx, phase):
@@ -542,6 +512,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
         probs = torch.sigmoid(outputs).squeeze(1)
         iou = self.iou(probs, labels)
         f1 = self.f1(probs, labels)
+        oa = self.OA(probs, labels)
         
         self.log(f"{phase}/loss", loss, on_step=True, on_epoch=True, 
                  prog_bar=True, logger=True, sync_dist=True)
@@ -549,8 +520,10 @@ class EmbeddingClassifierGFM(L.LightningModule):
                  prog_bar=True, logger=True, sync_dist=True)
         self.log(f"{phase}/f1", f1, on_step=True, on_epoch=True, 
                  prog_bar=True, logger=True, sync_dist=True)
-        
-        if phase in ["test", "train"]:
+        self.log(f"{phase}/overall_accuracy", oa, on_step=True, on_epoch=True, 
+                 prog_bar=True, logger=True, sync_dist=True)
+
+        if phase in ["test", "val"]:
             preds = (probs > 0.5).int()
             self._confusion_matrix.update(preds, labels)
         
@@ -567,9 +540,11 @@ class EmbeddingClassifierGFM(L.LightningModule):
     
     def on_test_end(self):
         self.confusion_matrix = self._confusion_matrix.compute()
+        self._confusion_matrix.reset()
     
-    def on_train_end(self):
+    def on_validation_end(self):
         self.confusion_matrix = self._confusion_matrix.compute()
+        self._confusion_matrix.reset()
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
@@ -596,8 +571,8 @@ class EmbeddingClassifierGFM(L.LightningModule):
             input_size=(
                 (1, (self.target_size[0] // self.patch_size) * (self.target_size[1] // self.patch_size), self.embedding_dim),
                 (1, (self.target_size[0] // self.patch_size) * (self.target_size[1] // self.patch_size), self.embedding_dim),
-                (1, 3, self.target_size[0], self.target_size[1]),  # RGB t0
-                (1, 3, self.target_size[0], self.target_size[1])   # RGB t1
+                (1, self.sar_channels, self.target_size[0], self.target_size[1]),  # SAR t0
+                (1, self.sar_channels, self.target_size[0], self.target_size[1])   # SAR t1
             ),
             expand_nested=True,
             graph_name='EmbeddingBinarySegmentationHead'

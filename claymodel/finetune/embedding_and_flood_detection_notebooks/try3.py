@@ -27,8 +27,8 @@ from lightning.pytorch import Trainer, seed_everything
 from lightning.pytorch.cli import LightningArgumentParser, instantiate_class
 
 # from claymodel.finetune.flood_detection.embedding_gfm_classifier import EmbeddingClassifierGFM
-from claymodel.finetune.flood_detection.embedding_gfm_classifier_2 import EmbeddingClassifierGFM
-from claymodel.finetune.flood_detection.embedding_datamodule_gfm import EmbeddingDataModuleGFM
+from claymodel.finetune.flood_detection.embedding_gfm_classifier_v3 import EmbeddingClassifierGFM
+from claymodel.finetune.flood_detection.embedding_datamodule_gfm_3 import EmbeddingDataModuleGFM3
 
 from datetime import datetime
 
@@ -41,7 +41,7 @@ def Train_segmentation_from_embeddings(config_path, test_after_training=False):
     # Create argument parser similar to LightningCLI
     parser = LightningArgumentParser()
     parser.add_lightning_class_args(EmbeddingClassifierGFM, "model")
-    parser.add_lightning_class_args(EmbeddingDataModuleGFM, "data")
+    parser.add_lightning_class_args(EmbeddingDataModuleGFM3, "data")
     parser.add_lightning_class_args(Trainer, "trainer")
     
     # Parse the config file
@@ -60,7 +60,7 @@ def Train_segmentation_from_embeddings(config_path, test_after_training=False):
                         if callback_config.class_path == "lightning.pytorch.loggers.CSVLogger":
                             callback_config.init_args['version'] = datetime.now().strftime("%Y%m%d_%H%M%S")
                         elif callback_config.class_path == "lightning.pytorch.loggers.WandbLogger":
-                            callback_config.init_args['name'] = "GFM_model_late_concat2_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+                            callback_config.init_args['name'] = "GFM_model_v3_" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
                     if object == "callbacks" and callback_config.class_path == "lightning.pytorch.callbacks.ModelCheckpoint":
                         callback_config.init_args['dirpath'] = os.path.join(callback_config.init_args['dirpath'], datetime.now().strftime("%Y%m%d_%H%M%S"))
@@ -79,7 +79,7 @@ def Train_segmentation_from_embeddings(config_path, test_after_training=False):
 
     # Create instances
     model = EmbeddingClassifierGFM(**config["model"])
-    datamodule = EmbeddingDataModuleGFM(**config["data"])
+    datamodule = EmbeddingDataModuleGFM3(**config["data"])
     trainer = Trainer(**trainer_config)
 
     result = trainer.fit(model, datamodule)
@@ -99,6 +99,6 @@ def Train_segmentation_from_embeddings(config_path, test_after_training=False):
 # 
 
 # %%
-CONFIG_PATH = "configs/train_embedding_flood_detection.yaml"
+CONFIG_PATH = "configs/train_embedding_flood_detection_v3.yaml"
 model, *_ = Train_segmentation_from_embeddings(CONFIG_PATH)
 model.draw_graph().visual_graph
