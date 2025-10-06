@@ -369,13 +369,12 @@ class EmbeddingClassifierGFM(L.LightningModule):
         self.loss_fn = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
         self.iou = BinaryJaccardIndex(threshold=0.5, ignore_index=-1)
         self.f1 = BinaryF1Score(threshold=0.5, ignore_index=-1)
-        phases = ["train", "val", "test"]
-        for phase in phases:
-            self._confusion_matrix[phase] = ConfusionMatrix(
-                task="binary",
-                threshold=0.5,
-                ignore_index=-1,
-            )
+        self._confusion_matrix = ConfusionMatrix(
+            task="binary",
+            threshold=0.5,
+            ignore_index=-1,
+        )
+        self.confusion_matrix = {}
         
         print(f"🏗️  EmbeddingClassifierGFM initialized:")
         print(f"   Input: {embedding_dim}D embeddings, {patch_size}x{patch_size} patches")
@@ -411,9 +410,10 @@ class EmbeddingClassifierGFM(L.LightningModule):
                  prog_bar=True, logger=True, sync_dist=True)
         self.log(f"{phase}/overall_accuracy", oa, on_step=True, on_epoch=True, 
                  prog_bar=True, logger=True, sync_dist=True)
-        
-        preds = (probs > 0.5).int()
-        self._confusion_matrix[phase].update(preds, labels)
+
+        if phase in ["test", "val"]:
+            preds = (probs > 0.5).int()
+            self._confusion_matrix.update(preds, labels)
         
         return loss
     
@@ -427,13 +427,15 @@ class EmbeddingClassifierGFM(L.LightningModule):
         return self.shared_step(batch, batch_idx, "test")
     
     def on_test_end(self):
-        self.confusion_matrix["test"] = self._confusion_matrix["test"].compute()
+        self.confusion_matrix["test"] = self._confusion_matrix.compute()
+        self.confusion_matrix.reset()
     
-    def on_train_end(self):
-        self.confusion_matrix["train"] = self._confusion_matrix["train"].compute()
+#    def on_train_end(self):
+#        self.confusion_matrix["train"] = self._confusion_matrix["train"].compute()
 
     def on_validation_end(self):
-        self.confusion_matrix["val"] = self._confusion_matrix["val"].compute()
+        self.confusion_matrix["val"] = self._confusion_matrix.compute()
+        self._confusion_matrix.reset()
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
