@@ -37,9 +37,11 @@ class EmbeddingDatasetGFM(Dataset):
         # Build label and mask file mapping based on shared chip index
         all_label_files = [p for p in self.label_dir.glob("*FLOOD*.npy")]
         all_mask_files = [p for p in self.label_dir.glob("*EXCLAYER*.npy")]
+        all_water_files = [p for p in self.label_dir.glob("*REFERENCE_WATER*.npy")]
 
         def key_from_name(src_name: str) -> str:
-            return src_name.split("chip", 1)[1] if "chip" in src_name else Path(src_name).stem
+            
+            return src_name.split("chip_", 1)[1].split("_",1)[0] if "chip" in src_name else Path(src_name).stem
 
         def match_by_index(src_name: str, candidates):
             chip_idx = key_from_name(src_name)
@@ -51,10 +53,11 @@ class EmbeddingDatasetGFM(Dataset):
         # Align labels and masks to pre embeddings
         self.labels = [match_by_index(name, all_label_files) for name in self.pre_embedding_files]
         self.masks = [match_by_index(name, all_mask_files) for name in self.pre_embedding_files]
+        self.water_refs = [match_by_index(name, all_water_files) for name in self.pre_embedding_files]
 
         # Basic checks
         assert len(self.pre_embedding_files) > 0, f"No embedding pairs found in directory {embeddings_dir}"
-        assert len(self.pre_embedding_files) == len(self.post_embedding_files) == len(self.labels) == len(self.masks), \
+        assert len(self.pre_embedding_files) == len(self.post_embedding_files) == len(self.labels) == len(self.masks) == len(self.water_refs), \
             "Mismatch between pre embeddings, post embeddings, labels, and masks counts"
     
     def __len__(self):
@@ -66,17 +69,20 @@ class EmbeddingDatasetGFM(Dataset):
         post_embedding_name = self.embeddings_dir / self.post_embedding_files[idx]
         label_name = self.label_dir / self.labels[idx]
         mask_name = self.label_dir / self.masks[idx]
+        water_ref_name = self.label_dir / self.water_refs[idx]
 
         pre_embedding = np.load(pre_embedding_name).astype(np.float32)
         post_embedding = np.load(post_embedding_name).astype(np.float32)
-        label = np.load(label_name)
-        excl_mask = np.load(mask_name)
+        label = np.load(label_name).astype(bool).astype(np.uint8)  # Binary mask: 1 for flood, 0 for no flood
+        excl_mask = np.load(mask_name).astype(bool)
+        water_ref = np.load(water_ref_name) == 1  # Water reference is 1 for permanent water
+        ignore_mask = excl_mask | (water_ref)  # Exclude both exclusion areas and water areas
         
         sample = {
             "pre_embedding": torch.from_numpy(pre_embedding),
             "post_embedding": torch.from_numpy(post_embedding),
             "label": torch.from_numpy(label),
-            "ignore_mask": torch.from_numpy(excl_mask),
+            "ignore_mask": torch.from_numpy(ignore_mask),
             "pre_embedding_name": self.pre_embedding_files[idx]
         }
         return sample

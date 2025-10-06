@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import lightning as L
 from typing import Tuple, Optional
 import segmentation_models_pytorch as smp
-from torchmetrics.classification import F1Score, MulticlassJaccardIndex, ConfusionMatrix
+from torchmetrics.classification import BinaryF1Score, BinaryJaccardIndex, ConfusionMatrix
 # from torchsummary import summary
 from torchview import draw_graph
 from einops import rearrange
@@ -32,7 +32,7 @@ class EmbeddingBinarySiameseConcatenationHead(nn.Module):
         self.embedding_dim = embedding_dim
         # self.embedding_size = embedding_size
         self.target_size = target_size
-        self.num_classes = 2 # we are targeting flood and no flood       
+        self.num_classes = 1 # binary segmentation uses a single logit channel      
         self.patch_size = patch_size 
         
         self.conv1 = nn.Conv2d(embedding_dim, hidden_dim, kernel_size=3, padding=1)
@@ -40,13 +40,13 @@ class EmbeddingBinarySiameseConcatenationHead(nn.Module):
         self.conv2 = nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(hidden_dim)
         self.conv_ps = nn.Conv2d(hidden_dim, C_out * patch_size * patch_size, kernel_size=3, padding=1)
-        self.pixel_shuffle = nn.PixelShuffle(upscale_factor=patch_size) # consider diving this in several different steps and or  adding ASPP
-        self.conv_out = nn.Conv2d(C_out, self.num_classes, kernel_size=3, padding=1)
+        self.pixel_shuffle = nn.PixelShuffle(upscale_factor=patch_size) # consider diving this in several different steps and or adding ASPP
+        self.conv_out = nn.Conv2d(C_out * 2, self.num_classes, kernel_size=3, padding=1) # times 2 because we concatenate pre and post flood features
         
     def forward(self, embeddings):
         """
         Args:
-            embeddings: Tensor of shape (batch_size, embedding_dim, h_emb, w_emb)
+            embeddings: Tensor of shape (batch_size, embedding_dim, h_emb, w_emb, time_step)
             
         Returns:
             logits: Tensor of shape (batch_size, num_classes, target_h, target_w)
@@ -56,8 +56,8 @@ class EmbeddingBinarySiameseConcatenationHead(nn.Module):
          # Reshape embeddings to [B, D, H', W']
         H_patches = self.target_size[0] // self.patch_size
         W_patches = self.target_size[1] // self.patch_size
-        x = rearrange(embeddings[0], "B (H W) D -> B D H W", H=H_patches, W=W_patches)
-        y = rearrange(embeddings[1], "B (H W) D -> B D H W", H=H_patches, W=W_patches)
+        x = rearrange(embeddings[...,0], "B (H W) D -> B D H W", H=H_patches, W=W_patches)
+        y = rearrange(embeddings[...,1], "B (H W) D -> B D H W", H=H_patches, W=W_patches)
         
         # Pass through convolutional layers
         x = F.relu(self.bn1(self.conv1(x)))
@@ -113,7 +113,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
         self.embedding_dim = embedding_dim
         self.patch_size = patch_size
         self.target_size = target_size
-        self.num_classes = 2
+        self.num_classes = 1
         self.lr = lr
         self.wd = wd
         
@@ -126,31 +126,20 @@ class EmbeddingClassifierGFM(L.LightningModule):
             hidden_dim=hidden_dim
         )
         
-        self.loss_fn = smp.losses.FocalLoss(mode="multiclass", ignore_index=-1)
-        self.iou = MulticlassJaccardIndex(
-            num_classes=self.num_classes,
-            average="weighted",
+        self.loss_fn = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
+        self.iou = BinaryJaccardIndex(
+            threshold=0.5,
             ignore_index=-1,
         )
-        self.f1 = F1Score(
-            task="multiclass",
-            num_classes=self.num_classes,
-            average="weighted",
+        self.f1 = BinaryF1Score(
+            threshold=0.5,
             ignore_index=-1,
         )
 
         self._confusion_matrix = ConfusionMatrix(
-            num_classes=self.num_classes,
-            task="multiclass",
+            task="binary",
+            threshold=0.5,
             ignore_index=-1,
-        )
-        
-        # summary(self.model, ((target_size[0] // patch_size) * (target_size[1] // patch_size), embedding_dim))
-        self.model_graph = draw_graph(
-            self.model, 
-            input_size=(1, (target_size[0] // patch_size) * (target_size[1] // patch_size), embedding_dim),
-            expand_nested=True,
-            graph_name='EmbeddingBinarySegmentationHead'
         )
         
         print(f"🏗️  EmbeddingClassifier initialized:")
@@ -167,7 +156,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
         Returns:
             logits: Tensor of shape (batch_size, num_classes, target_h, target_w)
         """
-        return self.model([batch["pre_embedding"], batch["post_embedding"]])
+        return self.model(torch.stack([batch["pre_embedding"], batch["post_embedding"]], dim=-1))
     
     def shared_step(self, batch, batch_idx, phase):
         """
@@ -181,7 +170,9 @@ class EmbeddingClassifierGFM(L.LightningModule):
         Returns:
             torch.Tensor: The loss value.
         """
-        labels = batch["label"].long()
+        labels = batch["label"].int()
+        exclude_mask = batch["ignore_mask"].bool()
+        labels[exclude_mask] = -1  # Set excluded pixels to ignore_index
         outputs = self(batch)
         # print(outputs.shape, labels.shape)
         # outputs = F.interpolate(
@@ -192,10 +183,11 @@ class EmbeddingClassifierGFM(L.LightningModule):
         # )  # Resize to match labels size
         # print(outputs.shape, labels.shape)
 
-
-        loss = self.loss_fn(outputs, labels)
-        iou = self.iou(outputs, labels)
-        f1 = self.f1(outputs, labels)
+        # Binary segmentation: compute loss on logits and metrics on probabilities
+        loss = self.loss_fn(outputs, labels.float())
+        probs = torch.sigmoid(outputs).squeeze(1)
+        iou = self.iou(probs, labels)
+        f1 = self.f1(probs, labels)
 
         # Log metrics
         self.log(
@@ -226,8 +218,9 @@ class EmbeddingClassifierGFM(L.LightningModule):
             sync_dist=True,
         )
 
-        if phase=="test":
-            self._confusion_matrix.update(torch.argmax(outputs, dim=1), labels)
+        if phase=="test" or phase=="train":
+            preds = (probs > 0.5).int()
+            self._confusion_matrix.update(preds, labels)
 
         return loss
     
@@ -260,8 +253,11 @@ class EmbeddingClassifierGFM(L.LightningModule):
     def test_step(self, batch, batch_idx):
         return self.shared_step(batch, batch_idx, "test")
     
-    def on_test_epoch_end(self):
+    def on_test_end(self):
         # Compute and log confusion matrix
+        self.confusion_matrix = self._confusion_matrix.compute()
+
+    def on_train_end(self):
         self.confusion_matrix = self._confusion_matrix.compute()
         
     
@@ -287,7 +283,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
             optimizer,
             T_0=100,
             T_mult=1,
-            eta_min=self.hparams.lr * 100,
+            eta_min=self.hparams.lr * 0.01,
             last_epoch=-1,
         )
         return {
@@ -297,3 +293,12 @@ class EmbeddingClassifierGFM(L.LightningModule):
                 "interval": "step",
             },
         }
+    
+    def draw_graph(self):
+        self.model_graph = draw_graph(
+            self.model, 
+            input_size=(1, (self.target_size[0] // self.patch_size) * (self.target_size[1] // self.patch_size), self.embedding_dim, 2),
+            expand_nested=True,
+            graph_name='EmbeddingBinarySegmentationHead'
+        )
+        return self.model_graph

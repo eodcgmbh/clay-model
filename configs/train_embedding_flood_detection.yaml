@@ -1,0 +1,75 @@
+
+# Model configuration - will be auto-filled with embedding dimensions
+model:
+  # These could be auto-detected from embeddings:
+  embedding_dim: 1024
+  patch_size: 8
+  target_size: [224, 224]  # Size of original images/labels
+  hidden_dim: 512
+  lr: 1e-3
+  wd: 1e-4
+  b1: 0.9
+  b2: 0.95
+  fusion_strategy: "early_concat"  # Options: "late_concat", "early_concat", "cross_attention"
+  use_aspp: False
+  use_residual: True
+
+data:
+  train_embedd_dir: data/GFM/ny/train_split_balanced_true/chips/embeddings_checkpoints_clay-v1/
+  train_label_dir: data/GFM/ny/train_split_balanced_true/labels/
+  val_embedd_dir: data/GFM/ny/val_split_balanced_false/chips/embeddings_checkpoints_clay-v1/
+  val_label_dir: data/GFM/ny/val_split_balanced_false/labels/
+  test_embedd_dir: data/GFM/ny/test/chips/embeddings_checkpoints_clay-v1/
+  test_label_dir: data/GFM/ny/test/labels/
+  target_size: [224, 224]
+  batch_size: 16  
+  num_workers: 8
+
+trainer:
+  accelerator: auto
+  # strategy: ddp
+  devices: auto
+  precision: bf16-mixed
+  log_every_n_steps: 1
+  max_epochs: 10
+  accumulate_grad_batches: 1
+  default_root_dir: checkpoints/flood_embeddings
+  fast_dev_run: False
+  num_sanity_val_steps: 0
+
+  logger:
+    - class_path: lightning.pytorch.loggers.WandbLogger
+      init_args:
+        entity: ignaciomasari-eodc
+        project: clay-embedding-flood-detection
+        log_model: false
+    # - class_path: lightning.pytorch.loggers.CSVLogger
+    #   init_args:
+    #     save_dir: "lightning_logs"
+    #     name: "clay-embedding-flood-detection"
+
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        dirpath: checkpoints/flood_embeddings
+        auto_insert_metric_name: False
+        filename: 'embedding-flood_epoch-{epoch:02d}_val-f1-{val/f1:.4f}'
+        monitor: val/f1
+        mode: max
+        save_last: True
+        save_top_k: 2
+        save_weights_only: True
+        verbose: True
+    
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val/loss
+        patience: 10
+        mode: min
+    
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+
+  plugins:
+    - class_path: lightning.pytorch.plugins.io.AsyncCheckpointIO

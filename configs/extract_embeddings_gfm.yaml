@@ -7,11 +7,11 @@ model:
 # Data configuration - same datamodule, optimized for embedding extraction
 data:
   parent_data_dir: data/GFM/ny/
-  train_split_name: train_split_balanced_true
+  train_split_name: train
   val_split_name: val_split_balanced_false
   test_split_name: test
   metadata_path: configs/metadata.yaml
-  batch_size: 32
+  batch_size: 16
   num_workers: 8
   platform: sentinel-1-sigma0
 

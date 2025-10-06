@@ -1,41 +1,15 @@
 # %% [markdown]
-# # Image encoding
-
-# %% [markdown]
-# ## Preparing the dataset
-# Make sure your dataset is divided in three folders: "train", "test", and "val". In each of these folders, there should be three sub-folders: chips and labels. In these two sub-folders there should be matching patches of PATHC_SIZE x PATCH_SIZE and format ".npy". Matching objects should have the same name, replacing "naip-new"(in the patches) by "lc"(in the labels).
+# # Train segmentation model
 # 
-# If following this tutorial, directory structure should look like:
-# ```
-# data/
-# └── cvpr/
-#     ├── files/
-#     │   ├── train/
-#     │   ├── val/
-#     │   └── test/
-#     └── ny/
-#         ├── train/
-#         │   ├── chips/
-#         │   └── labels/
-#         ├── val/
-#         │   ├── chips/
-#         │   └── labels/
-#         └── test/
-#             ├── chips/
-#             └── labels/
-# ```
-
-# %% [markdown]
-# ## Using the model
+# ## Training the segmentation head from embeddings
 # 
-# 1. Download the Clay model checkpoint from [Huggingface model hub](https://huggingface.co/made-with-clay/Clay/blob/main/v1.5/clay-v1.5.ckpt) and save it in the `checkpoints/` directory.
+# In this notebook you can train the segmentation model using pre-computed embeddings via LightningCLI using configurations in `configs/train_embedding_classifier.yaml`. Modify the batch size, learning rate, and other hyperparameters in the configuration file as needed.
 # 
-# 2. Run the model. Configuration file can be found in `configs/extract_embeddings_chesapeake.yaml`. Beaware, the function Encode_images_from_config needs to be run for all three folders "train", "val" and "test". For this you will need to modify the fields "predict_chip_dir", "predict_label_dir" and "output_dir" from the configuration file.
+# This notebook uses a CSV logger by default for training, validation and test results. A [WandB logger](https://lightning.ai/docs/pytorch/stable/extensions/generated/lightning.pytorch.loggers.WandbLogger.html#lightning.pytorch.loggers.WandbLogger) can also be used. If you prefer the latter, please switch the loggers and update the entity of the WandB logger configuration in `configs/train_embedding_classifier.yaml`.
+# 
 
 # %%
 import os
-import shutil
-import subprocess
 from pathlib import Path
 
 def find_project_root(marker='claymodel'):
@@ -46,105 +20,85 @@ def find_project_root(marker='claymodel'):
     raise FileNotFoundError(f"Project root not found")
 
 os.chdir(find_project_root())
-print(f"Current working directory: {os.getcwd()}")
 
-MODEL_DIR = "checkpoints/"
-CHECKPOINT_FILENAME = "clay-v1.5.ckpt"
-# CHECKPOINT_FILENAME = "Prithvi_EO_V2_300M.pt"
-
-full_target_path = os.path.join(MODEL_DIR, CHECKPOINT_FILENAME)
-
-if os.path.exists(full_target_path):
-    print(f"✓ File already exists at: {full_target_path}")
-else:
-    print(f"✗ File not found at: {full_target_path}")
-    
-    if CHECKPOINT_FILENAME != "clay-v1.5.ckpt":
-        print("Please download the model.")
-        exit(1)
-
-    print("Downloading checkpoint...")
-    
-    # Create target directory if it doesn't exist
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    
-    try:
-        # Download the file using wget
-        download_url = "https://huggingface.co/made-with-clay/Clay/resolve/main/v1.5/clay-v1.5.ckpt"
-        result = subprocess.run(
-            ["wget", "-q", download_url],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        
-        # Move the downloaded file to the target location
-        if os.path.exists(CHECKPOINT_FILENAME):
-            shutil.move(CHECKPOINT_FILENAME, full_target_path)
-            print(f"✓ Successfully downloaded and moved to: {full_target_path}")
-        else:
-            print("✗ Download failed - file not found after wget")
-            
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading file: {e}")
-        print(f"Error output: {e.stderr}")
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
 
 # %%
 from lightning.pytorch import Trainer, seed_everything
 from lightning.pytorch.cli import LightningArgumentParser, instantiate_class
 
-from claymodel.finetune.segment.embedding_extractor import ClayEmbeddingExtractor
-from claymodel.finetune.flood_detection.gfm_datamodule import GFMDataModule
+from claymodel.finetune.segment.embedding_classifier import EmbeddingClassifier
+from claymodel.finetune.segment.embedding_datamodule import EmbeddingDataModule
+
+from datetime import datetime
 
 seed_everything(42)  # your seed here
 
-def Encode_images_from_config(config_path, dataset="train"):
+def Train_segmentation_from_embeddings(config_path, test_after_training=False):
     
+    objects = ["callbacks", "logger", "plugins"]
+
+    # Create argument parser similar to LightningCLI
     parser = LightningArgumentParser()
-    parser.add_lightning_class_args(ClayEmbeddingExtractor, "model")
-    parser.add_lightning_class_args(GFMDataModule, "data")
+    parser.add_lightning_class_args(EmbeddingClassifier, "model")
+    parser.add_lightning_class_args(EmbeddingDataModule, "data")
     parser.add_lightning_class_args(Trainer, "trainer")
     
+    # Parse the config file
     config = parser.parse_path(config_path)
+
     trainer_config = dict(config["trainer"])
     
-    callbacks = []
-    for callback_config in trainer_config["callbacks"]:
-        if hasattr(callback_config, 'class_path') and hasattr(callback_config, 'init_args'):
-            # This is a Namespace object from CLI parsing
-            callback_config.init_args["model_path"] = config["model"]["ckpt_path"].replace('/', '_').split('.')[0]
-            callback = instantiate_class((), callback_config)
-            callbacks.append(callback)
-        elif isinstance(callback_config, dict) and "class_path" in callback_config:
-            # This is a dictionary configuration
-            callback_config["model_path"] = config["model"]["ckpt_path"].replace('/', '_').split('.')[0]    
-            callback = instantiate_class((), callback_config)
-            callbacks.append(callback)
-        else:
-            # Already an instantiated callback
-            callbacks.append(callback_config)
-    
-    print(callback_config)
-    trainer_config["callbacks"] = callbacks        
+    # Instantiate objects
+    for object in objects:
+        if object in trainer_config and trainer_config[object]:
+            callbacks = []
+            for callback_config in trainer_config[object]:
+                if hasattr(callback_config, 'class_path') and hasattr(callback_config, 'init_args'):
+                    # This is a Namespace object from CLI parsing
+                    if object == "logger" and callback_config.class_path == "lightning.pytorch.loggers.CSVLogger":
+                        callback_config.init_args['version'] = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    if object == "callbacks" and callback_config.class_path == "lightning.pytorch.callbacks.ModelCheckpoint":
+                        callback_config.init_args['dirpath'] = os.path.join(callback_config.init_args['dirpath'], datetime.now().strftime("%Y%m%d_%H%M%S"))
+                    callback = instantiate_class((), callback_config)
+                    callbacks.append(callback)                    
+                elif isinstance(callback_config, dict) and "class_path" in callback_config:
+                    # This is a dictionary configuration
+                    callback = instantiate_class((), callback_config)
+                    callbacks.append(callback)
+                else:
+                    # Already an instantiated callback
+                    callbacks.append(callback_config)
+            
+            trainer_config[object] = callbacks
     
     # Create instances
-    model = ClayEmbeddingExtractor(**config["model"])
-    config["data"]["predict_ds"] = dataset
-    datamodule = GFMDataModule(**config["data"])
-    trainer = Trainer(**trainer_config)
+    model = EmbeddingClassifier(**config["model"])
+    datamodule = EmbeddingDataModule(**config["data"])
+    trainer = Trainer(**trainer_config)    
 
-    trainer.predict(model, datamodule)   
+    result = trainer.fit(model, datamodule)
+    if test_after_training:
+        result = trainer.test(model, datamodule)
+        print(model.confusion_matrix)
 
-    return config
+    print("Results:", result)
+    
+    return model, datamodule, trainer, result
+
+
+# %% [markdown]
+# ## Training the model
+# 
+# Run the training process. The model will be trained using the configuration specified in `configs/train_embedding_classifier.yaml`. Set `test_after_training=True` to also run evaluation on the test set after training.
+# 
 
 # %%
-CONFIG_PATH = 'configs/extract_embeddings_gfm.yaml'
-# available_datasets = ["train", "val", "test"]
-available_datasets = ["test"]
+CONFIG_PATH = "configs/train_embedding_classifier.yaml"
+model, *_ = Train_segmentation_from_embeddings(CONFIG_PATH)
+model.model_graph.visual_graph
 
-for ds in available_datasets:
-    print(f"Encoding dataset: {ds}")
-    Encode_images_from_config(CONFIG_PATH, dataset=ds)
+
+# %%
+
+
 

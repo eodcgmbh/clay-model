@@ -76,3 +76,5 @@ checkpoints/
 *.ckpt
 utils/create_subset_dataset.py
 EmbeddingSegmentationHead.gv.png
+model_0_res.pdf
+model_0.pdf
