@@ -427,13 +427,13 @@ class EmbeddingClassifierGFM(L.LightningModule):
         return self.shared_step(batch, batch_idx, "test")
     
     def on_test_end(self):
-        self.confusion_matrix = self._confusion_matrix["test"].compute()
+        self.confusion_matrix["test"] = self._confusion_matrix["test"].compute()
     
     def on_train_end(self):
-        self.confusion_matrix = self._confusion_matrix["train"].compute()
+        self.confusion_matrix["train"] = self._confusion_matrix["train"].compute()
 
     def on_validation_end(self):
-        self.confusion_matrix = self._confusion_matrix["val"].compute()
+        self.confusion_matrix["val"] = self._confusion_matrix["val"].compute()
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
