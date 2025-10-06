@@ -241,7 +241,6 @@ class EmbeddingDataModuleGFM3(L.LightningDataModule):
             if (
                 self.test_embedd_dir is None
                 or self.test_label_dir is None
-                or self.test_chips_dir is None
             ):
                 raise ValueError("Test directories must be provided for test stage")
             self.test_ds = EmbeddingDatasetGFM3(
