@@ -539,11 +539,11 @@ class EmbeddingClassifierGFM(L.LightningModule):
         return self.shared_step(batch, batch_idx, "test")
     
     def on_test_end(self):
-        self.confusion_matrix = self._confusion_matrix.compute()
+        self.confusion_matrix["test"] = self._confusion_matrix.compute()
         self._confusion_matrix.reset()
     
     def on_validation_end(self):
-        self.confusion_matrix = self._confusion_matrix.compute()
+        self.confusion_matrix["val"] = self._confusion_matrix.compute()
         self._confusion_matrix.reset()
     
     def configure_optimizers(self):

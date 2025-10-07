@@ -78,3 +78,5 @@ utils/create_subset_dataset.py
 EmbeddingSegmentationHead.gv.png
 model_0_res.pdf
 model_0.pdf
+claymodel/finetune/embedding_and_flood_detection_notebooks/try_encode.py
+claymodel/finetune/embedding_and_flood_detection_notebooks/try4.py
