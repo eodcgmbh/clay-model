@@ -4,8 +4,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 # Configuration
-SOURCE_DIR = Path("data/GFM/ny/train")
-OUTPUT_BASE_DIR = Path("data/GFM/ny")
+SOURCE_DIR = Path("data/GFM/tif/train")
+OUTPUT_BASE_DIR = Path("data/GFM/tif")
 VAL_RATIO = 0.2  # Configurable validation split ratio
 BALANCE_TRAIN_SET = True  # Whether to reduce no-flood chips in training set
 BALANCE_VAL_SET = False  # Whether to reduce no-flood chips in validation set
@@ -26,31 +26,64 @@ np.random.seed(42)
 print("Analyzing dataset...")
 
 chips_dir = SOURCE_DIR / "chips"
-
 labels_dir = SOURCE_DIR / "labels"
 
-# Discover flooding files
+# Verify directories exist
+if not chips_dir.exists():
+    raise FileNotFoundError(f"Chips directory not found: {chips_dir}")
+if not labels_dir.exists():
+    raise FileNotFoundError(f"Labels directory not found: {labels_dir}")
+
+# Discover flooding files (should be .npy files for labels)
 flooding_files = list(labels_dir.glob("*FLOOD*.npy"))
+print(f"Found {len(flooding_files)} flood label files")
+
+# Check for corresponding image files
+tif_files = list(chips_dir.glob("*.tif"))
+print(f"Found {len(tif_files)} GeoTIFF image files")
 
 # Categorize chips
 chips_with_flood = []
 chips_without_flood = []
 
 print("Categorizing chips...")
+skipped_chips = 0
 for f in tqdm(flooding_files, desc="Processing chips"):
-    flooding = np.load(f)
-    idx = f.stem.split("chip_")[-1]
-    
-    # Get corresponding files
-    exclayer_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "ENSEMBLE_EXCLAYER") + ".npy")
-    lc_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "REFERENCE_WATER") + ".npy")
+    try:
+        flooding = np.load(f)
+        idx = f.stem.split("chip_")[-1]
+        
+        # Get corresponding files
+        exclayer_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "ENSEMBLE_EXCLAYER") + ".npy")
+        lc_file = labels_dir / (f.stem.replace("ENSEMBLE_FLOOD", "REFERENCE_WATER") + ".npy")
 
-    img_files = sorted(list(chips_dir.glob("*chip_" + str(idx) + "*")))
-    
-    # Check if chip has flooding
-    exclayer = np.load(exclayer_file)
-    valid_mask = (exclayer == 0)
-    has_flood = (flooding[valid_mask] == 1).sum() > 0
+        # Verify label files exist
+        if not exclayer_file.exists():
+            print(f"Warning: Exclusion layer file not found for chip {idx}. Skipping.")
+            skipped_chips += 1
+            continue
+        if not lc_file.exists():
+            print(f"Warning: Reference water file not found for chip {idx}. Skipping.")
+            skipped_chips += 1
+            continue
+
+        # Look for .tif files for images (pre/post chips)
+        img_files = sorted(list(chips_dir.glob("*chip_" + str(idx) + "*.tif")))
+        
+        # Ensure we have exactly 2 image files (pre and post)
+        if len(img_files) != 2:
+            print(f"Warning: Expected 2 image files for chip {idx}, found {len(img_files)}. Skipping.")
+            skipped_chips += 1
+            continue
+        
+        # Check if chip has flooding
+        exclayer = np.load(exclayer_file)
+        valid_mask = (exclayer == 0)
+        has_flood = (flooding[valid_mask] == 1).sum() > 0
+    except Exception as e:
+        print(f"Error processing chip {idx}: {e}. Skipping.")
+        skipped_chips += 1
+        continue
     
     chip_info = {
         'idx': idx,
@@ -68,7 +101,9 @@ for f in tqdm(flooding_files, desc="Processing chips"):
 print(f"\nOriginal dataset:")
 print(f"  - Chips with flood: {len(chips_with_flood)}")
 print(f"  - Chips without flood: {len(chips_without_flood)}")
-print(f"  - Total: {len(flooding_files)}")
+print(f"  - Total processed: {len(chips_with_flood) + len(chips_without_flood)}")
+print(f"  - Skipped chips: {skipped_chips}")
+print(f"  - Total flood files: {len(flooding_files)}")
 
 # Shuffle both categories
 np.random.shuffle(chips_with_flood)
@@ -125,15 +160,15 @@ print(f"\nClass balance:")
 print(f"  - Train flood ratio: {len(train_chips_flood)/len(train_chips)*100:.1f}%")
 print(f"  - Val flood ratio: {len(val_chips_flood)/len(val_chips)*100:.1f}%")
 
-# Function to copy chip files
+# Function to copy chip files (handles both .tif images and .npy labels)
 def copy_chip_files(chips, destination_dir, desc):
     for chip in tqdm(chips, desc=desc):
-        # Copy label files
+        # Copy label files (.npy format)
         for src_file in [chip['flood_file'], chip['exclayer_file'], chip['lc_file']]:
             dst_file = destination_dir / "labels" / src_file.name
             shutil.copy2(src_file, dst_file)
         
-        # Copy image files
+        # Copy image files (.tif format with geospatial metadata)
         for img_file in chip["imgs_files"]:
             dst_file = destination_dir / "chips" / img_file.name
             shutil.copy2(img_file, dst_file)

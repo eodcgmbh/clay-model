@@ -3,12 +3,113 @@ import numpy as np
 import lightning as L
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
+from datetime import datetime
+import math
 
 from typing import Optional, Tuple
 
 import yaml
 from box import Box
 from torchvision.transforms import v2
+import rasterio
+
+
+def extract_geospatial_metadata(geotiff_path):
+    """
+    Extract geospatial metadata from a GeoTIFF file.
+    
+    Args:
+        geotiff_path: Path to the GeoTIFF file
+        
+    Returns:
+        dict: Dictionary containing bounds, transform, crs, and acquisition date
+    """
+    with rasterio.open(geotiff_path) as src:
+        bounds = src.bounds
+        transform = src.transform
+        crs = src.crs
+        
+        # Extract acquisition date from tags if available
+        acquisition_date = None
+        if hasattr(src, 'tags') and 'ACQUISITION_DATE' in src.tags():
+            acquisition_date = src.tags()['ACQUISITION_DATE']
+        
+        return {
+            'bounds': bounds,
+            'transform': transform,
+            'crs': crs,
+            'acquisition_date': acquisition_date
+        }
+
+def normalize_latlon(lat, lon):
+    """
+    Normalize latitude and longitude coordinates using sinusoidal encoding.
+    This helps neural networks better handle the circular nature of coordinates.
+    
+    Args:
+        lat: Latitude in degrees
+        lon: Longitude in degrees
+        
+    Returns:
+        tuple: (sin(lat), cos(lat), sin(lon), cos(lon)) - normalized coordinates
+    """
+    lat = lat * np.pi / 180  # Convert to radians
+    lon = lon * np.pi / 180  # Convert to radians
+
+    return (math.sin(lat), math.cos(lat), math.sin(lon), math.cos(lon))
+
+def bounds_to_latlon_tensor(bounds):
+    """
+    Convert rasterio bounds to a normalized tensor format.
+    
+    Args:
+        bounds: rasterio.bounds.BoundingBox object (left, bottom, right, top)
+        
+    Returns:
+        torch.Tensor: [sin(lat), cos(lat), sin(lon), cos(lon)] - normalized coordinates
+    """
+    # Bounds are in order: left, bottom, right, top
+    left, bottom, right, top = bounds
+    lat = (bottom + top) / 2  # Center latitude
+    lon = (left + right) / 2  # Center longitude
+    lat_lon_norm = normalize_latlon(lat, lon)
+    return torch.tensor(lat_lon_norm, dtype=torch.float32)
+
+
+def normalize_timestamp(date):
+    """
+    Normalize timestamp using sinusoidal encoding for cyclical features.
+    This helps neural networks better handle the cyclical nature of time.
+    
+    Args:
+        date: datetime object
+        
+    Returns:
+        tuple: (sin(week), cos(week), sin(hour), cos(hour)) - normalized time features
+    """
+    week = date.isocalendar().week * 2 * np.pi / 52  # Normalize week to [0, 2π]
+    hour = date.hour * 2 * np.pi / 24  # Normalize hour to [0, 2π]
+
+    return (math.sin(week), math.cos(week), math.sin(hour), math.cos(hour))
+
+def date_to_tensor(date_str):
+    """
+    Convert date string to normalized tensor format using sinusoidal encoding.
+    
+    Args:
+        date_str: Date string in format 'YYYY-MM-DD'
+        
+    Returns:
+        torch.Tensor: [sin(week), cos(week), sin(hour), cos(hour)] - normalized time features
+    """
+    if date_str is None:
+        return torch.zeros(4, dtype=torch.float32)
+    
+    try:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        return torch.tensor(normalize_timestamp(date_obj), dtype=torch.float32)
+    except ValueError:
+        return torch.zeros(4, dtype=torch.float32)
 
 
 class EmbeddingDatasetGFM3(Dataset):
@@ -20,6 +121,8 @@ class EmbeddingDatasetGFM3(Dataset):
       - pre_image, post_image: [C, H, W] normalized
       - label: [H, W] (uint8 0/1)
       - ignore_mask: [H, W] (bool)
+      - pre_latlon, post_latlon: [4] normalized coordinates (sin/cos encoding)
+      - pre_time, post_time: [4] normalized time features (sin/cos encoding)
     """
 
     def __init__(
@@ -74,7 +177,7 @@ class EmbeddingDatasetGFM3(Dataset):
         self.water_refs = [match_by_index(name, all_water_files) for name in self.pre_embedding_files]
 
         # Pair pre/post chip files; try to find two files per chip index
-        all_chip_files = [p.name for p in self.chips_dir.glob("*.npy")]
+        all_chip_files = [p.name for p in self.chips_dir.glob("*.tif")]
         index_to_chipfiles = {}
         for fname in all_chip_files:
             idx = self._index_from_name(fname)
@@ -146,11 +249,21 @@ class EmbeddingDatasetGFM3(Dataset):
         # Load arrays
         pre_embedding = np.load(pre_embedding_name).astype(np.float32)
         post_embedding = np.load(post_embedding_name).astype(np.float32)
-        pre_img = np.load(pre_chip_name).astype(np.float32)
-        post_img = np.load(post_chip_name).astype(np.float32)
+        
+        # Load GeoTIFF chips with metadata
+        with rasterio.open(pre_chip_name) as src:
+            pre_img = src.read().astype(np.float32)
+            pre_metadata = extract_geospatial_metadata(pre_chip_name)
+        
+        with rasterio.open(post_chip_name) as src:
+            post_img = src.read().astype(np.float32)
+            post_metadata = extract_geospatial_metadata(post_chip_name)
+        
+        # Load label numpy files
         label = np.load(label_name).astype(bool).astype(np.uint8)
         excl_mask = np.load(mask_name).astype(bool)
         water_ref = np.load(water_ref_name) == 1
+        
         ignore_mask = excl_mask | (water_ref)
 
         # To tensors
@@ -164,6 +277,12 @@ class EmbeddingDatasetGFM3(Dataset):
             pre_img_t = self.transform(pre_img_t)
             post_img_t = self.transform(post_img_t)
 
+        # Extract geospatial metadata
+        pre_latlon = bounds_to_latlon_tensor(pre_metadata['bounds'])
+        post_latlon = bounds_to_latlon_tensor(post_metadata['bounds'])
+        pre_time = date_to_tensor(pre_metadata['acquisition_date'])
+        post_time = date_to_tensor(post_metadata['acquisition_date'])
+
         sample = {
             "pre_embedding": pre_embedding_t,
             "post_embedding": post_embedding_t,
@@ -171,6 +290,10 @@ class EmbeddingDatasetGFM3(Dataset):
             "post_image": post_img_t,
             "label": torch.from_numpy(label),
             "ignore_mask": torch.from_numpy(ignore_mask),
+            "pre_latlon": pre_latlon,
+            "post_latlon": post_latlon,
+            "pre_time": pre_time,
+            "post_time": post_time,
             "pre_embedding_name": self.pre_embedding_files[idx],
         }
         return sample
