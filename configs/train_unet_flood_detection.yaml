@@ -1,0 +1,66 @@
+# Data configuration
+data:
+  parent_data_dir: "data/GFM/tif"  # Path to processed GFM data
+  train_split_name: "train_split_balanced_true"
+  val_split_name: "val_split_balanced_false"
+  test_split_name: "test"
+  metadata_path: "configs/metadata.yaml"  # Path to metadata file
+  file_extension: "tif"  # File extension for chips (tif or npy)
+  batch_size: 16
+  num_workers: 8
+  max_samples: null  # Set to a number for debugging, null for full dataset
+  platform: "sentinel-1-sigma0"
+
+# Model configuration
+model:
+  in_channels: 2  # Number of channels per image (2 for VV/VH)
+  fusion_strategy: "concat_diff"  # Temporal fusion: concat, diff, or concat_diff
+  bilinear: false  # Use bilinear upsampling instead of transposed conv
+  lr: 1e-4
+  wd: 1e-4
+
+trainer:
+  accelerator: auto
+  # strategy: ddp
+  devices: auto
+  precision: bf16-mixed
+  log_every_n_steps: 5
+  max_epochs: 1
+  accumulate_grad_batches: 1
+  default_root_dir: checkpoints/flood_unet
+  fast_dev_run: False
+  num_sanity_val_steps: 0
+
+  logger:
+  # Logging configuration
+      - class_path: lightning.pytorch.loggers.WandbLogger
+        init_args:
+          entity: ignaciomasari-eodc
+          project: u-net-flood-detection
+          log_model: false
+  
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        dirpath: checkpoints/flood_unet
+        auto_insert_metric_name: False
+        filename: 'unet-flood_epoch-{epoch:02d}_val-f1-{val/f1:.4f}'
+        monitor: val/f1
+        mode: max
+        save_last: True
+        save_top_k: 1
+        save_weights_only: True
+        verbose: True
+    
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val/loss
+        patience: 10
+        mode: min
+    
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+
+  plugins:
+    - class_path: lightning.pytorch.plugins.io.AsyncCheckpointIO      

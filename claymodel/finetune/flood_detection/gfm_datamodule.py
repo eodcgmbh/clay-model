@@ -9,6 +9,7 @@ labels for flood segmentation. Pixels are exposed as two streams
 from pathlib import Path
 import math
 
+from datetime import datetime
 import lightning as L
 import numpy as np
 import torch
@@ -84,6 +85,7 @@ def bounds_to_latlon_tensor(bounds):
 def normalize_timestamp(date):
     """
     Normalize timestamp using sinusoidal encoding for cyclical features.
+    This helps neural networks better handle the cyclical nature of time.
     
     Args:
         date: datetime object
