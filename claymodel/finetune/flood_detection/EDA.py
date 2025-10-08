@@ -4,7 +4,7 @@ from pathlib import Path
 from collections import defaultdict
 import seaborn as sns
 
-DATA_DIR = Path("data/GFM/ny/val_split_balanced_false/labels")
+DATA_DIR = Path("data/GFM/tif/train_split_balanced_true/labels")
 
 # Configuration
 output_dir = DATA_DIR.parent / "eda_results"

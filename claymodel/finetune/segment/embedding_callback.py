@@ -85,7 +85,7 @@ class EmbeddingSaveCallback(L.Callback):
         else:
             # Save as different .npy files
             for i in range(embeddings.shape[0]):            
-                filename = batch["chip_name"][i].replace(".npy", "_emb.npy")
+                filename = batch["chip_name"][i].replace(".npy", "_emb.npy").replace(".tif", "")
                 filepath = self.output_dir / filename
                 np.save(filepath, embeddings_np[i])
         
