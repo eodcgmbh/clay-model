@@ -28,7 +28,7 @@ class GFMDataset(Dataset):
         platform (str): Platform identifier used in metadata.
     """
 
-    def __init__(self, chips_dir, metadata, platform):
+    def __init__(self, chips_dir, metadata, platform, file_extension):
         self.chips_dir = Path(chips_dir)
         self.metadata = metadata
         self.transform = self.create_transforms(
@@ -38,7 +38,7 @@ class GFMDataset(Dataset):
         self.gsd = torch.tensor(metadata[platform].gsd)
         self.waves = torch.tensor(list(metadata[platform].bands.wavelength.values()))
 
-        self.chips = [p for p in self.chips_dir.glob("*.npy")]
+        self.chips = [p for p in self.chips_dir.glob("*." + file_extension)]
 
     def create_transforms(self, mean, std):
         """
@@ -111,6 +111,7 @@ class GFMDataModule(L.LightningDataModule):
         train_split_name="train",
         val_split_name="val",
         test_split_name="test",
+        file_extension="npy",
     ):
         super().__init__()
         self.parent_data_dir = Path(parent_data_dir)
@@ -123,6 +124,7 @@ class GFMDataModule(L.LightningDataModule):
         self.platform = platform
         self.max_samples = max_samples
         self.predict_ds = predict_ds
+        self.file_extension = file_extension
 
     # def _label_dir(self, split_name: str) -> Path:
     #     return self.parent_data_dir / split_name / "labels"
@@ -165,4 +167,5 @@ class GFMDataModule(L.LightningDataModule):
             self.prd_ds,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            file_extension=self.file_extension,
         )

@@ -6,10 +6,11 @@ model:
 
 # Data configuration - same datamodule, optimized for embedding extraction
 data:
-  parent_data_dir: data/GFM/ny/
-  train_split_name: train
+  parent_data_dir: data/GFM/tif/
+  train_split_name: train_split_balanced_true
   val_split_name: val_split_balanced_false
   test_split_name: test
+  file_extension: tif
   metadata_path: configs/metadata.yaml
   batch_size: 16
   num_workers: 8
