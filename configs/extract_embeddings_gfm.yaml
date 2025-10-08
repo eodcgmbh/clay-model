@@ -12,8 +12,8 @@ data:
   test_split_name: test
   file_extension: tif
   metadata_path: configs/metadata.yaml
-  batch_size: 16
-  num_workers: 8
+  batch_size: 8
+  num_workers: 4
   platform: sentinel-1-sigma0
 
 

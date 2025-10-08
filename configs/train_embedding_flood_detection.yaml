@@ -15,23 +15,23 @@ model:
   use_residual: True
 
 data:
-  train_embedd_dir: data/GFM/ny/train_split_balanced_true/chips/embeddings_checkpoints_clay-v1/
-  train_label_dir: data/GFM/ny/train_split_balanced_true/labels/
-  val_embedd_dir: data/GFM/ny/val_split_balanced_false/chips/embeddings_checkpoints_clay-v1/
-  val_label_dir: data/GFM/ny/val_split_balanced_false/labels/
-  test_embedd_dir: data/GFM/ny/test/chips/embeddings_checkpoints_clay-v1/
-  test_label_dir: data/GFM/ny/test/labels/
+  train_embedd_dir: data/GFM/tif/train_split_balanced_true/chips/embeddings_checkpoints_clay-v1/
+  train_label_dir: data/GFM/tif/train_split_balanced_true/labels/
+  val_embedd_dir: data/GFM/tif/val_split_balanced_false/chips/embeddings_checkpoints_clay-v1/
+  val_label_dir: data/GFM/tif/val_split_balanced_false/labels/
+  test_embedd_dir: data/GFM/tif/test/chips/embeddings_checkpoints_clay-v1/
+  test_label_dir: data/GFM/tif/test/labels/
   target_size: [224, 224]
   batch_size: 16  
-  num_workers: 8
+  num_workers: 0
 
 trainer:
   accelerator: auto
   # strategy: ddp
   devices: auto
   precision: bf16-mixed
-  log_every_n_steps: 1
-  max_epochs: 1
+  log_every_n_steps: 5
+  max_epochs: 100
   accumulate_grad_batches: 1
   default_root_dir: checkpoints/flood_embeddings
   fast_dev_run: False
@@ -57,7 +57,7 @@ trainer:
         monitor: val/f1
         mode: max
         save_last: True
-        save_top_k: 2
+        save_top_k: 1
         save_weights_only: True
         verbose: True
     
