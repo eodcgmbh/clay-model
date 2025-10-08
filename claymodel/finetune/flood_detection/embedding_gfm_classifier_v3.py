@@ -160,10 +160,13 @@ class SARAdapter(nn.Module):
     
     def forward(self, sar):
         """
+        Forward pass for SAR feature extraction.
+        
         Args:
-            sar: [B, 3, H, W] - Original SAR images
+            sar: [B, 2C, H, W] - Combined pre/post SAR images
+            
         Returns:
-            Dictionary with features at three scales
+            dict: Dictionary with features at multiple scales
         """
         return {
             'scale1': self.scale1(sar),  # Coarsest - matches embedding resolution
@@ -174,11 +177,7 @@ class SARAdapter(nn.Module):
 
 
 class TemporalFusionSegmentationHead(nn.Module):
-    """
-    Flexible temporal fusion segmentation head with SAR auxiliary input.
-    
-    NEW: Accepts SAR images and fuses multi-scale SAR features throughout decoder.
-    """
+    """Flexible temporal fusion segmentation head with SAR auxiliary input."""
     
     def __init__(self, 
                  embedding_dim: int = 1024,
@@ -264,7 +263,7 @@ class TemporalFusionSegmentationHead(nn.Module):
         )
         
     def _build_encoder(self, in_channels, hidden_dim, use_residual, use_aspp):
-        """Build encoder: initial conv + optional ASPP"""
+        """Build encoder: initial conv + optional ASPP."""
         encoder = nn.ModuleDict()
         
         encoder['conv_initial'] = nn.Sequential(
@@ -337,13 +336,16 @@ class TemporalFusionSegmentationHead(nn.Module):
     
     def forward(self, emb_t0, emb_t1, sar_t0=None, sar_t1=None):
         """
+        Forward pass for temporal fusion with SAR auxiliary input.
+        
         Args:
             emb_t0: [B, N, D] - embeddings from time 0
             emb_t1: [B, N, D] - embeddings from time 1
             sar_t0: [B, C, H, W] - SAR image at time 0 (optional)
             sar_t1: [B, C, H, W] - SAR image at time 1 (optional)
+            
         Returns:
-            logits: [B, num_classes, H, W]
+            torch.Tensor: [B, num_classes, H, W] - segmentation logits
         """
         H_patches = self.target_size[0] // self.patch_size
         W_patches = self.target_size[1] // self.patch_size
@@ -409,9 +411,7 @@ class TemporalFusionSegmentationHead(nn.Module):
 
 
 class EmbeddingClassifierGFM(L.LightningModule):
-    """
-    Lightning module for binary flood segmentation with SAR auxiliary input
-    """
+    """Lightning module for binary flood segmentation with SAR auxiliary input."""
     
     def __init__(self,
                  embedding_dim: int = 1024,
@@ -430,22 +430,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
                      "late_concat", "late_diff", "late_concat_diff",
                      "siamese_concat", "siamese_diff"
                  ] = "early_concat_diff"):
-        """
-        Args:
-            embedding_dim: Dimension of input embeddings
-            patch_size: Patch size used in embeddings
-            target_size: Target output size (h_out, w_out)
-            hidden_dim: Hidden dimensions for decoder
-            lr: Learning rate
-            wd: Weight decay for optimizer
-            b1, b2: Adam betas
-            use_aspp: Whether to use ASPP module
-            use_residual: Whether to use residual connections
-            use_sar_fusion: Whether to use SAR auxiliary input (NEW)
-            sar_channels: Number of SAR channels (NEW)
-            sar_fusion_mode: How to fuse SAR features - 'concat' or 'add' (NEW)
-            fusion_strategy: How to fuse temporal embeddings
-        """
+        """Initialize the embedding classifier."""
         super().__init__()
         self.save_hyperparameters()
         
@@ -491,7 +476,15 @@ class EmbeddingClassifierGFM(L.LightningModule):
         print(f"   ASPP: {use_aspp}, Residual: {use_residual}")
     
     def forward(self, batch):
-        """Forward pass"""
+        """
+        Forward pass.
+        
+        Args:
+            batch: Dictionary containing pre/post embeddings and images
+            
+        Returns:
+            torch.Tensor: Segmentation logits
+        """
         
         return self.model(
             batch["pre_embedding"], 
@@ -501,7 +494,17 @@ class EmbeddingClassifierGFM(L.LightningModule):
         )
     
     def shared_step(self, batch, batch_idx, phase):
-        """Shared step for training/validation/test"""
+        """
+        Shared step for training/validation/test.
+        
+        Args:
+            batch: Batch data
+            batch_idx: Batch index
+            phase: Phase identifier ('train', 'val', or 'test')
+            
+        Returns:
+            torch.Tensor: Loss value
+        """
         labels = batch["label"].int()
         exclude_mask = batch["ignore_mask"].bool()
         labels[exclude_mask] = -1

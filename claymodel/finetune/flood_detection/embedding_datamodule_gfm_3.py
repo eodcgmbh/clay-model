@@ -14,15 +14,7 @@ from torchvision.transforms import v2
 import rasterio
 
 class EmbeddingDatasetGFM3(Dataset):
-    """
-    Dataset that loads pre/post Clay embeddings, corresponding GFM labels/masks,
-    and paired pre/post SAR chips ("images") for auxiliary fusion.
-    Returns a dict with keys used by embedding_gfm_classifier_v3:
-      - pre_embedding, post_embedding: [N_patches, D]
-      - pre_image, post_image: [C, H, W] normalized
-      - label: [H, W] (uint8 0/1)
-      - ignore_mask: [H, W] (bool)
-    """
+    """Dataset for pre/post Clay embeddings with GFM labels and SAR chips."""
 
     def __init__(
         self,
@@ -119,11 +111,13 @@ class EmbeddingDatasetGFM3(Dataset):
         return len(self.pre_embedding_files)
 
     def _key_from_name(self, src_name: str) -> str:
+        """Extract key from filename for pairing."""
         # Use everything after 'chip' token if present; else stem
         name = Path(src_name).name
         return name.split("chip", 1)[1] if "chip" in name else Path(name).stem
 
     def _index_from_name(self, src_name: str) -> str:
+        """Extract chip index from filename."""
         name = Path(src_name).name
         if "chip_" in name:
             # token immediately after 'chip_'
@@ -137,6 +131,15 @@ class EmbeddingDatasetGFM3(Dataset):
         return Path(name).stem
 
     def __getitem__(self, idx):
+        """
+        Get a sample from the dataset.
+        
+        Args:
+            idx: Index of the sample
+            
+        Returns:
+            dict: Sample containing pre/post embeddings, images, labels, and ignore mask
+        """
         pre_embedding_name = self.embeddings_dir / self.pre_embedding_files[idx]
         post_embedding_name = self.embeddings_dir / self.post_embedding_files[idx]
         label_name = self.label_dir / self.labels[idx]
@@ -187,10 +190,7 @@ class EmbeddingDatasetGFM3(Dataset):
 
 
 class EmbeddingDataModuleGFM3(L.LightningDataModule):
-    """
-    Lightning DataModule for pre-computed embeddings paired with SAR chips.
-    Produces batches compatible with EmbeddingClassifierGFM v3.
-    """
+    """Lightning DataModule for pre-computed embeddings with SAR chips."""
 
     def __init__(
         self,
@@ -228,6 +228,12 @@ class EmbeddingDataModuleGFM3(L.LightningDataModule):
         self.max_samples = max_samples
 
     def setup(self, stage: Optional[str] = None):
+        """
+        Set up datasets for training, validation, and testing.
+        
+        Args:
+            stage: Stage identifier ('fit', 'test', or None)
+        """
         if stage in {"fit", None}:
             self.trn_ds = EmbeddingDatasetGFM3(
                 self.train_embedd_dir,
@@ -266,6 +272,7 @@ class EmbeddingDataModuleGFM3(L.LightningDataModule):
             raise NotImplementedError()
 
     def train_dataloader(self):
+        """Create DataLoader for training data."""
         return DataLoader(
             self.trn_ds,
             batch_size=self.batch_size,
@@ -276,6 +283,7 @@ class EmbeddingDataModuleGFM3(L.LightningDataModule):
         )
 
     def val_dataloader(self):
+        """Create DataLoader for validation data."""
         return DataLoader(
             self.val_ds,
             batch_size=self.batch_size,
@@ -286,6 +294,7 @@ class EmbeddingDataModuleGFM3(L.LightningDataModule):
         )
 
     def test_dataloader(self):
+        """Create DataLoader for test data."""
         return DataLoader(
             self.test_ds,
             batch_size=self.batch_size,

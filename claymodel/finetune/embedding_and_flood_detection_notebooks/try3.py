@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 def find_project_root(marker='claymodel'):
+    """Find project root directory by marker."""
     current = Path.cwd()
     for path in [current] + list(current.parents):
         if (path / marker).exists():
@@ -35,7 +36,7 @@ from datetime import datetime
 seed_everything(42)  # your seed here
 
 def Train_segmentation_from_embeddings(config_path, test_after_training=False):
-    
+    """Train segmentation model from embeddings using config file."""
     objects = ["callbacks", "logger", "plugins"]
 
     # Create argument parser similar to LightningCLI

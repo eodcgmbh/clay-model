@@ -19,17 +19,7 @@ import rasterio as rio
 
 
 def save_chip_as_geotiff(chip_data, output_path, src_profile, x_offset, y_offset, acquisition_date=None):
-    """
-    Save chip as GeoTIFF with proper geospatial metadata.
-    
-    Args:
-        chip_data: numpy array of shape [C, H, W] 
-        output_path: path to save the GeoTIFF file
-        src_profile: source rasterio profile
-        x_offset: x offset in pixels from source image
-        y_offset: y offset in pixels from source image
-        acquisition_date: acquisition date string (optional)
-    """
+    """Save chip as GeoTIFF with proper geospatial metadata."""
     # Create new profile for the chip
     chip_profile = src_profile.copy()
     chip_profile.update({
@@ -86,9 +76,8 @@ def extract_acquisition_date_from_filename(filepath):
 
 def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=None, filter_water=None, filter_nodata=None):
     """
-    Reads all GeoTIFF files in a directory, creates chips of specified size,
-    and saves them as GeoTIFF files with preserved geospatial metadata.
-
+    Read GeoTIFF files, create chips, and save with geospatial metadata.
+    
     Args:
         input_dir (str or Path): Directory containing GeoTIFF files.
         chip_size (int): Size of the square chips.
@@ -96,6 +85,9 @@ def read_chip_filter(input_dir, output_dir, chip_size, filter_exclusion_layer=No
         filter_exclusion_layer (function): Function to filter chips based on exclusion layer.
         filter_water (function): Function to filter chips based on water content.
         filter_nodata (function): Function to filter chips based on nodata content.
+
+    Returns:
+        dict: Statistics including mean and std for VV and VH bands.
     """
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(output_dir / "chips", exist_ok=True)
@@ -281,8 +273,8 @@ def filter_nodata(max_nodata_percent):
     return filter_function
 
 
-# def main():
-def main(data_dir, output_dir, chip_size):
+def main():
+#def main(data_dir, output_dir, chip_size):
     """
     Main function to process files and create chips.
     Expects three command line arguments:
@@ -295,16 +287,16 @@ def main(data_dir, output_dir, chip_size):
     MAX_WATER_PERCENT = 0.75
     MAX_NODATA_PERCENT = 0.01
 
-    # if len(sys.argv) != 4:  # noqa: PLR2004
-    #     print("Usage: python script.py <data_dir> <output_dir> <chip_size>")
-    #     sys.exit(1)
+    if len(sys.argv) != 4:  # noqa: PLR2004
+        print("Usage: python script.py <data_dir> <output_dir> <chip_size>")
+        sys.exit(1)
 
-    # data_dir = Path(sys.argv[1])
-    # output_dir = Path(sys.argv[2])
-    # chip_size = int(sys.argv[3])
-    data_dir = Path(data_dir)
-    output_dir = Path(output_dir)
-    chip_size = int(chip_size)
+    data_dir = Path(sys.argv[1])
+    output_dir = Path(sys.argv[2])
+    chip_size = int(sys.argv[3])
+    #data_dir = Path(data_dir)
+    #output_dir = Path(output_dir)
+    #chip_size = int(chip_size)
 
     train_dir = data_dir / "train"
     train_output_dir = output_dir / "train"
@@ -330,5 +322,5 @@ def main(data_dir, output_dir, chip_size):
 
 
 if __name__ == "__main__":
-    # print(main())
-    print(main("data/GFM/files", "data/GFM/tif", 224))
+    print(main())
+    #print(main("data/GFM/files", "data/GFM/tif", 224))

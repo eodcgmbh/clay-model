@@ -9,7 +9,7 @@ import segmentation_models_pytorch as smp
 from einops import rearrange
 
 class ResidualBlock(nn.Module):
-    """Residual block for feature refinement"""
+    """Residual block for feature refinement."""
     def __init__(self, channels):
         super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
@@ -27,7 +27,7 @@ class ResidualBlock(nn.Module):
         return out
     
 class SequentialBlock(nn.Module):
-    """A sequence of convolutional layers with batch norm and ReLU"""
+    """A sequence of convolutional layers with batch norm and ReLU."""
     def __init__(self, channels, num_layers=1):
         super().__init__()
         layers = []
@@ -43,7 +43,7 @@ class SequentialBlock(nn.Module):
 
 
 class UpsampleBlock(nn.Module):
-    """Upsampling block using PixelShuffle with residual connections"""
+    """Upsampling block using PixelShuffle with residual connections."""
     def __init__(self, in_channels, out_channels, upscale_factor=2, use_residual=True):
         super().__init__()
         self.conv_before = nn.Conv2d(
@@ -70,7 +70,7 @@ class UpsampleBlock(nn.Module):
 
 
 class ASPPModule(nn.Module):
-    """Atrous Spatial Pyramid Pooling"""
+    """Atrous Spatial Pyramid Pooling."""
     def __init__(self, in_channels, out_channels, atrous_rates=[3, 6, 9]):
         super().__init__()
         
@@ -254,11 +254,14 @@ class TemporalFusionSegmentationHead(nn.Module):
     
     def forward(self, emb_t0, emb_t1):
         """
+        Forward pass for temporal fusion.
+        
         Args:
             emb_t0: [B, N, D] - embeddings from time 0
             emb_t1: [B, N, D] - embeddings from time 1
+            
         Returns:
-            logits: [B, num_classes, H, W]
+            torch.Tensor: [B, num_classes, H, W] - segmentation logits
         """
         H_patches = self.target_size[0] // self.patch_size
         W_patches = self.target_size[1] // self.patch_size
@@ -328,19 +331,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
                      "late_concat", "late_diff", "late_concat_diff",
                      "siamese_concat", "siamese_diff"
                  ] = "early_concat_diff"):
-        """
-        Args:
-            embedding_dim: Dimension of input embeddings
-            patch_size: Patch size used in embeddings
-            target_size: Target output size (h_out, w_out)
-            hidden_dim: Hidden dimensions for decoder
-            lr: Learning rate
-            wd: Weight decay for optimizer
-            b1, b2: Adam betas
-            use_aspp: Whether to use ASPP module
-            use_residual: Whether to use residual connections
-            fusion_strategy: How to fuse temporal embeddings (see TemporalFusionSegmentationHead)
-        """
+        """Initialize the embedding classifier."""
         super().__init__()
         self.save_hyperparameters()
         
@@ -383,11 +374,29 @@ class EmbeddingClassifierGFM(L.LightningModule):
         print(f"   ASPP: {use_aspp}, Residual: {use_residual}")
     
     def forward(self, batch):
-        """Forward pass"""
+        """
+        Forward pass.
+        
+        Args:
+            batch: Dictionary containing pre/post embeddings
+            
+        Returns:
+            torch.Tensor: Segmentation logits
+        """
         return self.model(batch["pre_embedding"], batch["post_embedding"])
     
     def shared_step(self, batch, batch_idx, phase):
-        """Shared step for training/validation/test"""
+        """
+        Shared step for training/validation/test.
+        
+        Args:
+            batch: Batch data
+            batch_idx: Batch index
+            phase: Phase identifier ('train', 'val', or 'test')
+            
+        Returns:
+            torch.Tensor: Loss value
+        """
         labels = batch["label"].int()
         exclude_mask = batch["ignore_mask"].bool()
         labels[exclude_mask] = -1

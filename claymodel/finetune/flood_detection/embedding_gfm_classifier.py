@@ -10,9 +10,7 @@ from torchview import draw_graph
 from einops import rearrange
 
 class EmbeddingBinarySiameseConcatenationHead(nn.Module):
-    """
-    Segmentation head that takes Clay embeddings as input and outputs segmentation masks
-    """
+    """Segmentation head that takes Clay embeddings as input and outputs segmentation masks."""
     
     def __init__(self, 
                  embedding_dim: int,
@@ -21,13 +19,7 @@ class EmbeddingBinarySiameseConcatenationHead(nn.Module):
                  patch_size: int=8,
                  hidden_dim: int=512,
                  C_out: int=64):
-        """
-        Args:
-            embedding_dim: Dimension of Clay embeddings (e.g., 1024)
-            embedding_size: Spatial size of embeddings (e.g., (8, 8))
-            target_size: Target output size (e.g., (224, 224))
-            num_classes: Number of segmentation classes
-        """
+        """Initialize the segmentation head."""
         super().__init__()
         self.embedding_dim = embedding_dim
         # self.embedding_size = embedding_size
@@ -45,11 +37,13 @@ class EmbeddingBinarySiameseConcatenationHead(nn.Module):
         
     def forward(self, embeddings):
         """
+        Forward pass for segmentation head.
+        
         Args:
             embeddings: Tensor of shape (batch_size, embedding_dim, h_emb, w_emb, time_step)
             
         Returns:
-            logits: Tensor of shape (batch_size, num_classes, target_h, target_w)
+            torch.Tensor: Tensor of shape (batch_size, num_classes, target_h, target_w)
         """
         # x = self.fpn(embeddings) #aca tengo que llegar a [16,768,1024]
 
@@ -81,9 +75,7 @@ class EmbeddingBinarySiameseConcatenationHead(nn.Module):
         return x
 
 class EmbeddingClassifierGFM(L.LightningModule):
-    """
-    Lightning module for training a classifier on Clay embeddings
-    """
+    """Lightning module for training a classifier on Clay embeddings."""
     
     def __init__(self,
                  embedding_dim: int=1024,
@@ -101,10 +93,11 @@ class EmbeddingClassifierGFM(L.LightningModule):
             embedding_dim: Dimension of input embeddings
             patch_size: Spatial size of embeddings
             target_size: Target output size (h_out, w_out)
-            num_classes: Number of classes for segmentation
-            hidden_dims: Hidden dimensions for decoder
+            hidden_dim: Hidden dimensions for decoder
             lr: Learning rate
             wd: Weight decay for optimizer
+            b1: Beta1 for AdamW optimizer
+            b2: Beta2 for AdamW optimizer
             class_weights: Optional class weights for loss function
         """
         super().__init__()
@@ -148,27 +141,27 @@ class EmbeddingClassifierGFM(L.LightningModule):
     
     def forward(self, batch):
         """
-        Forward pass
+        Forward pass.
         
         Args:
-            batch: dictionary with labels and embeddings
+            batch: Dictionary with labels and embeddings
             
         Returns:
-            logits: Tensor of shape (batch_size, num_classes, target_h, target_w)
+            torch.Tensor: Tensor of shape (batch_size, num_classes, target_h, target_w)
         """
         return self.model(torch.stack([batch["pre_embedding"], batch["post_embedding"]], dim=-1))
     
     def shared_step(self, batch, batch_idx, phase):
         """
         Shared step for training and validation.
-
+        
         Args:
-            batch (dict): A dictionary containing the batch data.
-            batch_idx (int): The index of the batch.
-            phase (str): The phase (train or val).
-
+            batch: A dictionary containing the batch data
+            batch_idx: The index of the batch
+            phase: The phase (train or val)
+            
         Returns:
-            torch.Tensor: The loss value.
+            torch.Tensor: The loss value
         """
         labels = batch["label"].int()
         exclude_mask = batch["ignore_mask"].bool()
@@ -264,10 +257,9 @@ class EmbeddingClassifierGFM(L.LightningModule):
     def configure_optimizers(self):
         """
         Configure the optimizer and learning rate scheduler.
-
+        
         Returns:
-            dict: A dictionary containing the optimizer and scheduler
-            configuration.
+            dict: A dictionary containing the optimizer and scheduler configuration
         """
         optimizer = torch.optim.AdamW(
             [

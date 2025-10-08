@@ -84,7 +84,6 @@ def bounds_to_latlon_tensor(bounds):
 def normalize_timestamp(date):
     """
     Normalize timestamp using sinusoidal encoding for cyclical features.
-    This helps neural networks better handle the cyclical nature of time.
     
     Args:
         date: datetime object

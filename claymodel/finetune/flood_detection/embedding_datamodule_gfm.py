@@ -64,7 +64,15 @@ class EmbeddingDatasetGFM(Dataset):
         return len(self.pre_embedding_files)
     
     def __getitem__(self, idx):
-
+        """
+        Get a sample from the dataset.
+        
+        Args:
+            idx: Index of the sample
+            
+        Returns:
+            dict: Sample containing pre/post embeddings, labels, and ignore mask
+        """
         pre_embedding_name = self.embeddings_dir / self.pre_embedding_files[idx]
         post_embedding_name = self.embeddings_dir / self.post_embedding_files[idx]
         label_name = self.label_dir / self.labels[idx]
@@ -106,13 +114,15 @@ class EmbeddingDataModuleGFM(L.LightningDataModule):
     ):
         """
         Args:
-            embeddings_dir: Directory containing saved embeddings
-            label_dir: Directory containing labels
+            train_embedd_dir: Directory containing training embeddings
+            train_label_dir: Directory containing training labels
+            val_embedd_dir: Directory containing validation embeddings
+            val_label_dir: Directory containing validation labels
+            test_embedd_dir: Directory containing test embeddings
+            test_label_dir: Directory containing test labels
             target_size: Target size for labels (original image size)
             batch_size: Batch size for training
-            num_workers: Number of workers for data loading
-            train_split: Fraction of data to use for training
-            val_split: Fraction of data to use for validation
+            num_workers: Number of workers for data loading (for CPU only)
         """
         super().__init__()        
         self.train_embedd_dir = train_embedd_dir
@@ -127,7 +137,12 @@ class EmbeddingDataModuleGFM(L.LightningDataModule):
         
     
     def setup(self, stage: Optional[str] = None):
-        """Set up datasets"""
+        """
+        Set up datasets.
+        
+        Args:
+            stage: Stage identifier ('fit', 'test', or None)
+        """
         
         if stage in {"fit", None}:
             self.trn_ds = EmbeddingDatasetGFM(
@@ -152,6 +167,7 @@ class EmbeddingDataModuleGFM(L.LightningDataModule):
             raise NotImplementedError()
     
     def train_dataloader(self):
+        """Create DataLoader for training data."""
         return DataLoader(
             self.trn_ds,
             batch_size=self.batch_size,
@@ -162,6 +178,7 @@ class EmbeddingDataModuleGFM(L.LightningDataModule):
         )
     
     def val_dataloader(self):
+        """Create DataLoader for validation data."""
         return DataLoader(
             self.val_ds,
             batch_size=self.batch_size,
@@ -172,6 +189,7 @@ class EmbeddingDataModuleGFM(L.LightningDataModule):
         )
     
     def test_dataloader(self):
+        """Create DataLoader for test data."""
         return DataLoader(
             self.test_ds,
             batch_size=self.batch_size,
