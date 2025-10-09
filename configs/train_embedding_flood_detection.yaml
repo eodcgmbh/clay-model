@@ -10,7 +10,7 @@ model:
   wd: 1e-4
   b1: 0.9
   b2: 0.95
-  focal_alpha: 0.85
+  focal_alpha: 0.9
   fusion_strategy: "early_concat"  # Options: "late_concat", "early_concat", "cross_attention"
   use_aspp: False
   use_residual: True
