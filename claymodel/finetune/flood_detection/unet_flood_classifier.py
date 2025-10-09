@@ -182,7 +182,10 @@ class UNetFloodClassifier(L.LightningModule):
                  lr: float = 1e-4,
                  wd: float = 1e-4,
                  b1: float = 0.9,
-                 b2: float = 0.95):
+                 b2: float = 0.95,
+                 focal_alpha: float = 0.9,
+                 focal_gamma: float = 2.0,
+                ):
         """
         Initialize the U-Net flood classifier.
         
@@ -214,7 +217,7 @@ class UNetFloodClassifier(L.LightningModule):
         )
         
         # Loss and metrics (same as embedding classifier)
-        self.loss_fn = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
+        self.loss_fn = smp.losses.FocalLoss(mode="binary", alpha=focal_alpha, gamma=focal_gamma, ignore_index=-1)
         self.iou = BinaryJaccardIndex(threshold=0.5, ignore_index=-1)
         self.f1 = BinaryF1Score(threshold=0.5, ignore_index=-1)
         self.OA = BinaryAccuracy(threshold=0.5, ignore_index=-1)

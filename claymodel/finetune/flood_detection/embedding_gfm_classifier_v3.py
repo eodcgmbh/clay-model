@@ -425,6 +425,8 @@ class EmbeddingClassifierGFM(L.LightningModule):
                  use_aspp: bool = True,
                  use_residual: bool = True,
                  sar_channels: int = 2,
+                 focal_alpha: float = 0.9,
+                 focal_gamma: float = 2.0,
                  fusion_strategy: Literal[
                      "early_concat", "early_diff", "early_concat_diff",
                      "late_concat", "late_diff", "late_concat_diff",
@@ -458,7 +460,7 @@ class EmbeddingClassifierGFM(L.LightningModule):
         
         # Loss and metrics (aligned with v2)
         self.OA = BinaryAccuracy(threshold=0.5, ignore_index=-1)
-        self.loss_fn = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
+        self.loss_fn = smp.losses.FocalLoss(mode="binary", alpha=focal_alpha, gamma=focal_gamma, ignore_index=-1)
         self.iou = BinaryJaccardIndex(threshold=0.5, ignore_index=-1)
         self.f1 = BinaryF1Score(threshold=0.5, ignore_index=-1)
         self._confusion_matrix = ConfusionMatrix(
