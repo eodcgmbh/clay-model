@@ -25,7 +25,6 @@ data:
   target_size: [224, 224]
   batch_size: 16  
   num_workers: 0
-  platform: "sentinel-1-sigma0"
 
 trainer:
   accelerator: auto

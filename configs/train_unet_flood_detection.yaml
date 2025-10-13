@@ -18,7 +18,7 @@ model:
   bilinear: false  # Use bilinear upsampling instead of transposed conv
   lr: 1e-4
   wd: 1e-4
-  focal_alpha: 0.9
+  focal_alpha: 0.2
 
 trainer:
   accelerator: auto
