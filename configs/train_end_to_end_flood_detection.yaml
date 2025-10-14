@@ -22,9 +22,9 @@ model:
   focal_gamma: 2.0
   
   # Architecture options
-  use_aspp: True
+  use_aspp: False
   use_residual: True
-  freeze_encoder: True  # Keep Clay encoder frozen
+  freeze_encoder: False
   
   # Fusion strategy for pre/post temporal fusion
   # Options: "early_concat", "early_diff", "early_concat_diff",
@@ -43,8 +43,8 @@ data:
   test_split_name: test
   
   # Data loading
-  batch_size: 8
-  num_workers: 4
+  batch_size: 16
+  num_workers: 0
   platform: sentinel-1-rtc
   target_size: [224, 224]
   max_samples: null  # Set to a number to limit samples (for debugging)
@@ -60,36 +60,37 @@ trainer:
   default_root_dir: checkpoints/end_to_end_flood
   fast_dev_run: False
   num_sanity_val_steps: 2
+  enable_checkpointing: False
 
   logger:
-    - class_path: lightning.pytorch.loggers.CSVLogger
-      init_args:
-        save_dir: "logs"
-        name: "end_to_end_flood_detection"
+    #- class_path: lightning.pytorch.loggers.CSVLogger
+    #  init_args:
+    #    save_dir: "logs"
+    #    name: "end_to_end_flood_detection"
     # Uncomment to use Weights & Biases
-    # - class_path: lightning.pytorch.loggers.WandbLogger
-    #   init_args:
-    #     entity: your-entity
-    #     project: clay-end-to-end-flood
-    #     log_model: false
+    - class_path: lightning.pytorch.loggers.WandbLogger
+      init_args:
+        entity: ignaciomasari-eodc
+        project: clay-end-to-end-flood
+        log_model: false
 
   callbacks:
-    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
-      init_args:
-        dirpath: checkpoints/end_to_end_flood
-        auto_insert_metric_name: False
-        filename: 'end_to_end-epoch-{epoch:02d}_val-iou-{val/iou:.4f}'
-        monitor: val/iou
-        mode: max
-        save_last: True
-        save_top_k: 3
-        save_weights_only: False
-        verbose: True
+    #- class_path: lightning.pytorch.callbacks.ModelCheckpoint
+    #  init_args:
+    #    dirpath: checkpoints/end_to_end_flood
+    #    auto_insert_metric_name: False
+    #    filename: 'end_to_end-epoch-{epoch:02d}_val-iou-{val/iou:.4f}'
+    #    monitor: val/iou
+    #    mode: max
+    #    save_last: True
+    #    save_top_k: 1
+    #    save_weights_only: False
+    #    verbose: True
     
     - class_path: lightning.pytorch.callbacks.EarlyStopping
       init_args:
         monitor: val/iou
-        patience: 20
+        patience: 10
         mode: max
         verbose: True
     
@@ -97,5 +98,5 @@ trainer:
       init_args:
         logging_interval: step
 
-  plugins:
-    - class_path: lightning.pytorch.plugins.io.AsyncCheckpointIO
+  #plugins:
+  #  - class_path: lightning.pytorch.plugins.io.AsyncCheckpointIO
