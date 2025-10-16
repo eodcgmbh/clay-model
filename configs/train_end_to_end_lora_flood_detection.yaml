@@ -1,0 +1,107 @@
+# Configuration for end-to-end flood detection training
+# This trains a unified model: Clay encoder (frozen) + decoder + classifier
+
+model:
+  # Path to Clay checkpoint
+  ckpt_path: checkpoints/clay-v1.5.ckpt
+  
+  # Model architecture
+  embedding_dim: 1024
+  patch_size: 8
+  target_size: [224, 224]
+  hidden_dim: 512
+  
+  # Training hyperparameters
+  lr: 1e-4
+  wd: 1e-4
+  b1: 0.9
+  b2: 0.95
+  
+  # Loss configuration
+  focal_alpha: 0.75
+  focal_gamma: 2.0
+  
+  # Architecture options
+  use_aspp: False
+  use_residual: True
+
+  #LoRA hyperparams
+  lora_rank: 4
+  lora_alpha: 8.0
+  lora_dropout: 0.0
+  lora_target_modules: ['to_q', 'to_v']
+  
+  # Fusion strategy for pre/post temporal fusion
+  # Options: "early_concat", "early_diff", "early_concat_diff",
+  #          "late_concat", "late_diff", "late_concat_diff",
+  #          "siamese_concat", "siamese_diff"
+  fusion_strategy: "early_concat_diff"
+
+data:
+  # Data directories - adjust these to your data location
+  parent_data_dir: data/GFM/tif
+  metadata_path: configs/metadata.yaml
+  
+  # Split names (subdirectories under parent_data_dir)
+  train_split_name: train_split_balanced_true
+  val_split_name: val_split_balanced_false
+  test_split_name: test
+  
+  # Data loading
+  batch_size: 16
+  num_workers: 0
+  platform: sentinel-1-rtc
+  target_size: [224, 224]
+  max_samples: null  # Set to a number to limit samples (for debugging)
+
+trainer:
+  accelerator: auto
+  devices: 1
+  precision: 16-mixed
+  log_every_n_steps: 10
+  max_epochs: 100
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  default_root_dir: checkpoints/end_to_end_flood
+  fast_dev_run: False
+  num_sanity_val_steps: 2
+  enable_checkpointing: False
+
+  logger:
+    #- class_path: lightning.pytorch.loggers.CSVLogger
+    #  init_args:
+    #    save_dir: "logs"
+    #    name: "end_to_end_flood_detection"
+    # Uncomment to use Weights & Biases
+    - class_path: lightning.pytorch.loggers.WandbLogger
+      init_args:
+        entity: ignaciomasari-eodc
+        project: clay-end-to-end-lora-flood
+        log_model: false
+
+  callbacks:
+    #- class_path: lightning.pytorch.callbacks.ModelCheckpoint
+    #  init_args:
+    #    dirpath: checkpoints/end_to_end_flood
+    #    auto_insert_metric_name: False
+    #    filename: 'end_to_end-epoch-{epoch:02d}_val-iou-{val/iou:.4f}'
+    #    monitor: val/iou
+    #    mode: max
+    #    save_last: True
+    #    save_top_k: 1
+    #    save_weights_only: False
+    #    verbose: True
+    
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val/iou
+        patience: 10
+        mode: max
+        verbose: True
+    
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+
+  #plugins:
+  #  - class_path: lightning.pytorch.plugins.io.AsyncCheckpointIO
