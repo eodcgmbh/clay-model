@@ -1,0 +1,34 @@
+# Model configuration - Clay embedding extractor
+model:
+  ckpt_path: checkpoints/clay-v1.5.ckpt  # Path to model checkpoint
+  freeze_encoder: true  # Freeze for inference
+  cls: false
+
+# Data configuration - same datamodule, optimized for embedding extraction
+data:
+  parent_data_dir: data/AI4B/
+  train_split_name: FR_train_200
+  val_split_name: FR_val_40
+  test_split_name: ES_100
+  metadata_path: configs/metadata.yaml
+  batch_size: 8
+  num_workers: 4
+  max_samples: 200
+  platform: sentinel-2-l2a-reduced
+
+
+# Trainer configuration for embedding extraction
+trainer:
+  accelerator: auto  # Use GPU if available
+  devices: auto
+  logger: false  # No logging needed
+  enable_checkpointing: false  # No checkpoints needed
+  enable_progress_bar: true  # Show progress
+
+# Callback for saving embeddings
+trainer:
+  callbacks:
+    - class_path: claymodel.finetune.segment.embedding_callback.EmbeddingSaveCallback
+      init_args:        
+        compression: false  # Use .npz compression to save disk space
+        compressed_quantization: true #save to float16

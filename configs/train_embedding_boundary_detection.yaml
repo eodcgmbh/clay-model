@@ -4,27 +4,26 @@ model:
   # These could be auto-detected from embeddings:
   embedding_dim: 1024
   patch_size: 8
-  target_size: [224, 224]  # Size of original images/labels
+  target_size: [256, 256]  # Size of original images/labels
   hidden_dim: 512
   lr: 1e-3
   wd: 1e-4
   b1: 0.9
   b2: 0.95
   focal_alpha: 0.75
-  fusion_strategy: "early_concat"  # Options: "late_concat", "early_concat", "cross_attention"
   use_aspp: False
   use_residual: True
 
 data:
-  train_embedd_dir: data/GFM/tif/train_split_balanced_true/chips/embeddings_checkpoints_clay-v1/
-  train_label_dir: data/GFM/tif/train_split_balanced_true/labels/
-  val_embedd_dir: data/GFM/tif/val_split_balanced_false/chips/embeddings_checkpoints_clay-v1/
-  val_label_dir: data/GFM/tif/val_split_balanced_false/labels/
-  test_embedd_dir: data/GFM/tif/test/chips/embeddings_checkpoints_clay-v1/
-  test_label_dir: data/GFM/tif/test/labels/
-  target_size: [224, 224]
+  train_embedd_dir: data/AI4B/FR_train_200/images/embeddings_checkpoints_clay-v1/
+  train_label_dir: data/AI4B/FR_train_200/masks/
+  val_embedd_dir: data/AI4B/FR_val_40/images/embeddings_checkpoints_clay-v1/
+  val_label_dir: data/AI4B/FR_val_40/masks/
+  test_embedd_dir: data/AI4B/ES_100/images/embeddings_checkpoints_clay-v1/
+  test_label_dir: data/AI4B/ES_100/masks/
+  target_size: [256, 256]
   batch_size: 16  
-  num_workers: 0
+  num_workers: 4
 
 trainer:
   accelerator: auto
@@ -34,7 +33,7 @@ trainer:
   log_every_n_steps: 5
   max_epochs: 1
   accumulate_grad_batches: 1
-  default_root_dir: checkpoints/flood_embeddings
+  default_root_dir: checkpoints/boundary_embeddings
   fast_dev_run: False
   num_sanity_val_steps: 0
 
@@ -42,19 +41,19 @@ trainer:
     - class_path: lightning.pytorch.loggers.WandbLogger
       init_args:
         entity: ignaciomasari-eodc
-        project: clay-embedding-flood-detection
+        project: clay-embedding-boundary-detection
         log_model: false
     # - class_path: lightning.pytorch.loggers.CSVLogger
     #   init_args:
     #     save_dir: "lightning_logs"
-    #     name: "clay-embedding-flood-detection"
+    #     name: "clay-embedding-boundary-detection"
 
   callbacks:
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
       init_args:
-        dirpath: checkpoints/flood_embeddings
+        dirpath: checkpoints/boundary_embeddings
         auto_insert_metric_name: False
-        filename: 'embedding-flood_epoch-{epoch:02d}_val-f1-{val/f1:.4f}'
+        filename: 'embedding-boundary_epoch-{epoch:02d}_val-f1-{val/f1:.4f}'
         monitor: val/f1
         mode: max
         save_last: True

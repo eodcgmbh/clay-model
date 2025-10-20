@@ -82,3 +82,5 @@ claymodel/finetune/embedding_and_flood_detection_notebooks/try*
 claymodel/finetune/flood_detection/README_END_TO_END.md
 claymodel/finetune/embedding_and_flood_detection_notebooks/encodeGFM.py
 claymodel/finetune/embedding_and_flood_detection_notebooks/train_from_embeddings.py
+claymodel/finetune/notebooks_boundary_detection/1-encode-AI4B.py
+claymodel/finetune/notebooks_boundary_detection/2-train-boundaries-model.py
