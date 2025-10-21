@@ -81,7 +81,7 @@ class EmbeddingDatasetAI4B(Dataset):
                     self.target_size[1]
                 ),
                 resampling=rio.enums.Resampling.nearest
-            )[:2,...].astype(np.uint8) # Keep only first two channels (boundary and field)
+            )[:2,...].astype(np.uint8) # Keep only first two channels (field and boundary)
         
         sample = {
             "embedding": torch.from_numpy(embedding),

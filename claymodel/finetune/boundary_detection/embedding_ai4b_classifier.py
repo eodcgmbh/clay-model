@@ -315,7 +315,9 @@ class EmbeddingClassifierAI4B(L.LightningModule):
             batch: Dictionary containing pre/post embeddings
             
         Returns:
-            torch.Tensor: Segmentation logits
+            torch.Tensor: Segmentation logits. Beaware that output has two channels:
+                          first for boundaries and second for fields. On the contrary,
+                          labels have two channels: first for field labels and second for boundary labels.
         """
         return self.model(batch["embedding"])
     
@@ -336,8 +338,8 @@ class EmbeddingClassifierAI4B(L.LightningModule):
         outputs = self(batch)
 
         # Split labels into boundary and field channels
-        boundary_labels = labels[:, 0]
-        field_labels = labels[:, 1]
+        field_labels = labels[:, 0]
+        boundary_labels = labels[:, 1]
 
         # Split outputs into boundary and field logits
         boundary_logits = outputs[:, 0]
