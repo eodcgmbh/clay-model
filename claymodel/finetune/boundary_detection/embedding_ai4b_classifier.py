@@ -219,7 +219,8 @@ class TemporalFusionSegmentationHead(nn.Module):
         return nn.ModuleDict({
             'up1': UpsampleBlock(hidden_dim, hidden_dim // 2, upscale_factor=2, use_residual=use_residual),
             'up2': UpsampleBlock(hidden_dim // 2, hidden_dim // 4, upscale_factor=2, use_residual=use_residual),
-            'up3': UpsampleBlock(hidden_dim // 4, hidden_dim // 8, upscale_factor=2, use_residual=use_residual)
+            'up3': UpsampleBlock(hidden_dim // 4, hidden_dim // 8, upscale_factor=2, use_residual=use_residual),
+            'up4': UpsampleBlock(hidden_dim // 8, hidden_dim // 8, upscale_factor=2, use_residual=use_residual)
         })
     
     def forward(self, emb):
@@ -247,6 +248,8 @@ class TemporalFusionSegmentationHead(nn.Module):
         x = self.decoder['up1'](x)
         x = self.decoder['up2'](x)
         x = self.decoder['up3'](x)
+        if self.patch_size == 16:
+            x = self.decoder['up4'](x)
         
         # Final classifications
         boundaries = self.boundary_conv(x)

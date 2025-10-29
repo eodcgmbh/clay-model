@@ -84,3 +84,11 @@ claymodel/finetune/embedding_and_flood_detection_notebooks/encodeGFM.py
 claymodel/finetune/embedding_and_flood_detection_notebooks/train_from_embeddings.py
 claymodel/finetune/notebooks_boundary_detection/1-encode-AI4B.py
 claymodel/finetune/notebooks_boundary_detection/2-train-boundaries-model.py
+ES_100.tar.gz
+FR_train_200.tar.gz
+FR_val_40.tar.gz
+output
+.gitignore
+output.pdf
+.gitignore
+.gitignore

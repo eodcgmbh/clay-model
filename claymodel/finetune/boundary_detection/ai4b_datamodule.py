@@ -56,7 +56,7 @@ def normalize_latlon(lat, lon):
 
     return (math.sin(lat), math.cos(lat), math.sin(lon), math.cos(lon))
 
-def bounds_to_latlon_tensor(bounds):
+def bounds_to_latlon_tensor(bounds, normalize):
     """
     Convert rasterio bounds to a normalized tensor format.
 
@@ -70,8 +70,11 @@ def bounds_to_latlon_tensor(bounds):
     left, bottom, right, top = bounds
     lat = (bottom + top) / 2  # Center latitude
     lon = (left + right) / 2  # Center longitude
-    lat_lon_norm = normalize_latlon(lat, lon)
-    return torch.tensor(lat_lon_norm, dtype=torch.float32)
+    if normalize:
+        lat_lon_norm = normalize_latlon(lat, lon)
+        return torch.tensor(lat_lon_norm, dtype=torch.float32)
+    else:
+        return torch.tensor([lat, lon], dtype=torch.float32)
 
 
 def normalize_timestamp(date):
@@ -90,7 +93,7 @@ def normalize_timestamp(date):
 
     return (math.sin(week), math.cos(week), math.sin(hour), math.cos(hour))
 
-def date_to_tensor(times):
+def date_to_tensor(times, normalize):
     """
     Convert array of datetimes to normalized tensor format using sinusoidal encoding.
 
@@ -100,8 +103,15 @@ def date_to_tensor(times):
     Returns:
         torch.Tensor: [sin(week), cos(week), sin(hour), cos(hour)] - normalized time features
     """
-    time_features = [normalize_timestamp(pd.to_datetime(t)) for t in times]
-    return torch.tensor(time_features, dtype=torch.float32)
+    # time_features = [normalize_timestamp(pd.to_datetime(t)) for t in times]
+    dates = [pd.to_datetime(t) for t in times]
+
+    if normalize:
+        time_features = [normalize_timestamp(date) for date in dates]
+        return torch.tensor(time_features, dtype=torch.float32)
+    else:
+        time_features = [[date.year, date.dayofyear - 1] for date in dates]
+        return torch.tensor(time_features, dtype=torch.float32)
 
 
 
@@ -116,7 +126,7 @@ class AI4BDataset(Dataset):
         platform (str): Platform identifier used in metadata.
     """
 
-    def __init__(self, chips_dir, metadata, platform):
+    def __init__(self, chips_dir, metadata, platform, normalize_metadata):
         self.chips_dir = Path(chips_dir)
         # self.labels_dir = Path(labels_dir)
         self.metadata = metadata
@@ -128,6 +138,7 @@ class AI4BDataset(Dataset):
         self.waves = torch.tensor(list(metadata[platform].bands.wavelength.values()))
         self.chips = [p for p in self.chips_dir.glob("*.nc")]
         # self.labels = [p for p in self.labels_dir.glob("*.tif")]
+        self.normalize_metadata = normalize_metadata
 
     def create_transforms(self, mean, std):
         """
@@ -159,7 +170,7 @@ class AI4BDataset(Dataset):
         Returns:
             dict: A dictionary containing the image, label, and additional information.
         """    
-        ds = xr.open_dataset(self.chips[idx], engine='netcdf4')
+        ds = xr.open_dataset(self.chips[idx], engine="h5netcdf")
         # dims = np.array(list(ds.dims.values()))
         
         times = ds.time.values
@@ -168,8 +179,8 @@ class AI4BDataset(Dataset):
         img_np = np.array([ds[d].values for d in ["B2", "B3", "B4", "B8"]])
         img_np = np.swapaxes(img_np, 0, 1)  # Shape: (T, C, H, W)
 
-        chip_latlon = bounds_to_latlon_tensor(coords_to_bounds(coords))
-        chip_times = date_to_tensor(times)
+        chip_latlon = bounds_to_latlon_tensor(coords_to_bounds(coords), self.normalize_metadata)
+        chip_times = date_to_tensor(times, self.normalize_metadata)
 
         sample = {
             "pixels": self.transform(torch.from_numpy(img_np)),  # Shape: (C, H, W)
@@ -212,6 +223,7 @@ class AI4BDataModule(L.LightningDataModule):
         train_split_name="FR_train",
         val_split_name="FR_val",
         test_split_name="ES",
+        normalize_metadata=True,
     ):
         super().__init__()
         self.parent_data_dir = Path(parent_data_dir)
@@ -224,6 +236,7 @@ class AI4BDataModule(L.LightningDataModule):
         self.platform = platform
         self.max_samples = max_samples
         self.predict_ds = predict_ds
+        self.normalize_metadata = normalize_metadata
 
     # def _label_dir(self, split_name: str) -> Path:
     #     return self.parent_data_dir / split_name / "masks"
@@ -256,6 +269,7 @@ class AI4BDataModule(L.LightningDataModule):
                 # masks_dir,
                 self.metadata,
                 self.platform,
+                self.normalize_metadata,
             )
 
     def predict_dataloader(self):

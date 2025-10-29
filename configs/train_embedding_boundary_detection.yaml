@@ -3,7 +3,7 @@
 model:
   # These could be auto-detected from embeddings:
   embedding_dim: 1024
-  patch_size: 8
+  patch_size: 16
   target_size: [256, 256]  # Size of original images/labels
   hidden_dim: 512
   lr: 1e-3
@@ -15,11 +15,11 @@ model:
   use_residual: True
 
 data:
-  train_embedd_dir: data/AI4B/FR_train_200/images/embeddings_checkpoints_clay-v1/
+  train_embedd_dir: data/AI4B/FR_train_200/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
   train_label_dir: data/AI4B/FR_train_200/masks/
-  val_embedd_dir: data/AI4B/FR_val_40/images/embeddings_checkpoints_clay-v1/
+  val_embedd_dir: data/AI4B/FR_val_40/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
   val_label_dir: data/AI4B/FR_val_40/masks/
-  test_embedd_dir: data/AI4B/ES_100/images/embeddings_checkpoints_clay-v1/
+  test_embedd_dir: data/AI4B/ES_100/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
   test_label_dir: data/AI4B/ES_100/masks/
   target_size: [256, 256]
   batch_size: 16  
