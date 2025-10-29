@@ -3,27 +3,28 @@
 model:
   # These could be auto-detected from embeddings:
   embedding_dim: 1024
-  patch_size: 16
+  patch_size: 16  #16 for Prithvi EO V2 300M, 8 for Clay v1.5
   target_size: [256, 256]  # Size of original images/labels
   hidden_dim: 512
   lr: 1e-3
   wd: 1e-4
   b1: 0.9
   b2: 0.95
-  focal_alpha: 0.75
+  focal_alpha_boundaries: 0.75
+  focal_alpha_fields: 0.5
   use_aspp: False
   use_residual: True
 
 data:
-  train_embedd_dir: data/AI4B/FR_train_200/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
-  train_label_dir: data/AI4B/FR_train_200/masks/
-  val_embedd_dir: data/AI4B/FR_val_40/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
-  val_label_dir: data/AI4B/FR_val_40/masks/
-  test_embedd_dir: data/AI4B/ES_100/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
-  test_label_dir: data/AI4B/ES_100/masks/
+  train_embedd_dir: /home/jovyan/work/AI4B/FR_train_800/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
+  train_label_dir: /home/jovyan/work/AI4B/FR_train_800/masks/
+  val_embedd_dir: /home/jovyan/work/AI4B/FR_val_200/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
+  val_label_dir: /home/jovyan/work/AI4B/FR_val_200/masks/
+  test_embedd_dir: /home/jovyan/work/AI4B/NL_250/images/embeddings_checkpoints_Prithvi_EO_V2_300M/
+  test_label_dir: /home/jovyan/work/AI4B/NL_250/masks/
   target_size: [256, 256]
   batch_size: 16  
-  num_workers: 4
+  num_workers: 0
 
 trainer:
   accelerator: auto
@@ -31,7 +32,7 @@ trainer:
   devices: auto
   precision: bf16-mixed
   log_every_n_steps: 5
-  max_epochs: 1
+  max_epochs: 100
   accumulate_grad_batches: 1
   default_root_dir: checkpoints/boundary_embeddings
   fast_dev_run: False

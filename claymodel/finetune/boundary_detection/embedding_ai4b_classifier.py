@@ -275,7 +275,8 @@ class EmbeddingClassifierAI4B(L.LightningModule):
                  b2: float = 0.95,
                  use_aspp: bool = True,
                  use_residual: bool = True,
-                 focal_alpha: float = 0.9,
+                 focal_alpha_boundaries: float = 0.9,
+                 focal_alpha_fields: float = 0.9,
                  focal_gamma: float = 2.0,
                  ):
         """Initialize the embedding classifier."""
@@ -300,7 +301,8 @@ class EmbeddingClassifierAI4B(L.LightningModule):
         
         # Loss and metrics
         self.OA = BinaryAccuracy(threshold=0.5, ignore_index=-1)        
-        self.loss_fn = smp.losses.FocalLoss(mode="binary", alpha=focal_alpha, gamma=focal_gamma, ignore_index=-1)
+        self.loss_boundaries = smp.losses.FocalLoss(mode="binary", alpha=focal_alpha_boundaries, gamma=focal_gamma, ignore_index=-1)
+        self.loss_fields = smp.losses.FocalLoss(mode="binary", alpha=focal_alpha_fields, gamma=focal_gamma, ignore_index=-1)
         self.iou = BinaryJaccardIndex(threshold=0.5, ignore_index=-1)
         self.f1 = BinaryF1Score(threshold=0.5, ignore_index=-1)
         
@@ -349,8 +351,8 @@ class EmbeddingClassifierAI4B(L.LightningModule):
         field_logits = outputs[:, 1]
 
         # Compute losses for each channel
-        boundary_loss = self.loss_fn(boundary_logits.contiguous(), boundary_labels.float().contiguous())
-        field_loss = self.loss_fn(field_logits.contiguous(), field_labels.float().contiguous())
+        boundary_loss = self.loss_boundaries(boundary_logits.contiguous(), boundary_labels.float().contiguous())
+        field_loss = self.loss_fields(field_logits.contiguous(), field_labels.float().contiguous())
         loss = boundary_loss + field_loss
 
         # Convert logits to probabilities

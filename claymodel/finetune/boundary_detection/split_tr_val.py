@@ -4,20 +4,20 @@ from pathlib import Path
 from tqdm import tqdm
 
 # Configuration
-SOURCE_TRAIN_DIR = Path("data/AI4B/FR")  # Source for train/val split
-SOURCE_TEST_DIR = Path("data/AI4B/ES")  # Source for test (optional, set to None to disable)
-OUTPUT_BASE_DIR = Path("data/AI4B/")
+SOURCE_TRAIN_DIR = Path("/home/jovyan/work/AI4B/FR")  # Source for train/val split
+SOURCE_TEST_DIR = Path("/home/jovyan/work/AI4B/NL")  # Source for test (optional, set to None to disable)
+OUTPUT_BASE_DIR = Path("/home/jovyan/work/AI4B")
 VAL_RATIO = 0.2  # Configurable validation split ratio
 
 # Maximum samples per dataset (set to None for no limit)
-MAX_TRAIN_SAMPLES = 200  # e.g., 1000 to limit to 1000 training samples
-MAX_VAL_SAMPLES = 40    # e.g., 200 to limit to 200 validation samples
-MAX_TEST_SAMPLES = 100   # e.g., 100 to limit to 100 test samples
+MAX_TRAIN_SAMPLES = 800  # e.g., 1000 to limit to 1000 training samples
+MAX_VAL_SAMPLES = 200    # e.g., 200 to limit to 200 validation samples
+MAX_TEST_SAMPLES = 250   # e.g., 100 to limit to 100 test samples
 
 # Create output directories
 TRAIN_DIR = OUTPUT_BASE_DIR / ("FR_train_" + str(MAX_TRAIN_SAMPLES) if MAX_TRAIN_SAMPLES else "FR_train")
 VAL_DIR = OUTPUT_BASE_DIR / ("FR_val_" + str(MAX_VAL_SAMPLES) if MAX_VAL_SAMPLES else "FR_val")
-TEST_DIR = OUTPUT_BASE_DIR / ("ES_" + str(MAX_TEST_SAMPLES) if MAX_TEST_SAMPLES else "ES")
+TEST_DIR = OUTPUT_BASE_DIR / ("NL_" + str(MAX_TEST_SAMPLES) if MAX_TEST_SAMPLES else "NL")
 
 # Create train and val directories
 for split_dir in [TRAIN_DIR, VAL_DIR]:

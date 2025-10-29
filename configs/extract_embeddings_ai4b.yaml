@@ -3,18 +3,21 @@ model:
   ckpt_path: checkpoints/clay-v1.5.ckpt  # Path to model checkpoint
   freeze_encoder: true  # Freeze for inference
   cls: false
+  indices: [7, 15, 23, 31] # clay v1.5
+  bands: ["BLUE", "GREEN", "RED", "NIR_NARROW"]
 
 # Data configuration - same datamodule, optimized for embedding extraction
 data:
-  parent_data_dir: data/AI4B/
-  train_split_name: FR_train_200
-  val_split_name: FR_val_40
-  test_split_name: ES_100
+  parent_data_dir: /home/jovyan/work/AI4B/
+  train_split_name: FR_train_800
+  val_split_name: FR_val_200
+  test_split_name: NL_250
   metadata_path: configs/metadata.yaml
-  batch_size: 8
-  num_workers: 4
-  max_samples: 200
+  batch_size: 16
+  num_workers: 0
+  max_samples: None
   platform: sentinel-2-l2a-reduced
+  normalize_metadata: false  
 
 
 # Trainer configuration for embedding extraction
