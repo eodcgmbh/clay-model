@@ -92,3 +92,10 @@ output
 output.pdf
 .gitignore
 .gitignore
+coverage_map_aus.png
+coverage_map.png
+notebook_boundaries_clay_embeddings.pdf
+notebook_boundaries_clay_embeddings.pdf:Zone.Identifier
+notebook_boundaries_prithvi_embeddings.pdf
+notebook_boundaries_prithvi_embeddings.pdf:Zone.Identifier
+try.ipynb
