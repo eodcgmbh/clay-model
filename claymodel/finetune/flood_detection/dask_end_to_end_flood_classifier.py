@@ -314,6 +314,8 @@ class EndToEndFloodClassifier(L.LightningModule):
     
     def __init__(self,
                  ckpt_s3_path: str,
+                 S3_KEY: str,
+                 S3_SECRET: str,
                  embedding_dim: int = 1024,
                  patch_size: int = 8,
                  target_size: Tuple[int, int] = (224, 224),
@@ -348,7 +350,11 @@ class EndToEndFloodClassifier(L.LightningModule):
         # Load Clay encoder
         print(f"🔄 Loading Clay encoder from: {ckpt_s3_path}")
 
-        fs = s3fs.S3FileSystem(anon=True)
+        fs = s3fs.S3FileSystem(
+            key=S3_KEY,
+            secret=S3_SECRET,
+            client_kwargs={'endpoint_url': 'https://objectstore.eodc.eu:2222'},
+        )
 
         with tempfile.NamedTemporaryFile(delete=False, suffix='.ckpt') as tmp_file:
             ckpt_local_path = tmp_file.name
